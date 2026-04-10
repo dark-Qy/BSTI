@@ -17,6 +17,7 @@ import (
 	"feishu-personality-agent/internal/collector"
 	"feishu-personality-agent/internal/config"
 	"feishu-personality-agent/internal/llm"
+	"feishu-personality-agent/internal/persona"
 	"feishu-personality-agent/internal/report"
 	"feishu-personality-agent/internal/sandbox"
 	"feishu-personality-agent/internal/session"
@@ -60,6 +61,7 @@ func New(cfg ServerConfig) *Server {
 	}
 	r := gin.New()
 	r.Use(gin.Recovery())
+	r.StaticFS("/assets/photos", gin.Dir("photos", false))
 	r.GET("/", s.index)
 	r.POST("/api/sessions", s.createSession)
 	r.POST("/api/sessions/:id/login", s.login)
@@ -116,6 +118,7 @@ func (s *Server) status(c *gin.Context) {
 		"verification_url": item.VerificationURL,
 		"error":            item.Error,
 		"report_ready":     item.ReportHTML != "",
+		"primary_persona":  primaryPersonaSummary(item),
 	})
 }
 
@@ -131,6 +134,7 @@ func (s *Server) analyze(c *gin.Context) {
 	}
 	item.Status = session.StatusCollecting
 	item.Error = ""
+	item.PersonaResult = nil
 	if err := s.store.Save(item); err != nil {
 		writeError(c, http.StatusInternalServerError, err)
 		return
@@ -404,7 +408,8 @@ func (s *Server) runAnalysis(ctx context.Context, item *session.Session) error {
 	if err := s.store.Save(item); err != nil {
 		return err
 	}
-	prompt := collector.BuildAnalysisPrompt(bundle)
+	catalog := persona.All()
+	prompt := collector.BuildAnalysisPrompt(bundle, catalog)
 	client := llm.NewAIDPClient(llm.Config{
 		URL:       s.cfg.AIDP.ModelHubURL,
 		AK:        s.cfg.AIDP.AK,
@@ -412,14 +417,22 @@ func (s *Server) runAnalysis(ctx context.Context, item *session.Session) error {
 		MaxTokens: s.cfg.AIDP.MaxTokens,
 		Stream:    s.cfg.AIDP.Stream,
 	}, http.DefaultClient)
-	markdown, err := client.Generate(ctx, prompt)
+	output, err := client.GenerateWithValidation(ctx, prompt, func(content string) error {
+		_, parseErr := persona.ParseLLMResult(content)
+		return parseErr
+	})
 	if err != nil {
 		return err
 	}
-	paths, err := report.WriteLocal(item.Dir, markdown)
+	result, err := persona.ParseLLMResult(output)
 	if err != nil {
 		return err
 	}
+	paths, err := report.WriteLocal(item.Dir, result)
+	if err != nil {
+		return err
+	}
+	item.PersonaResult = &result
 	item.ReportMarkdown = paths.Markdown
 	item.ReportHTML = paths.HTML
 	item.Status = session.StatusDone
@@ -460,6 +473,13 @@ func writeError(c *gin.Context, status int, err error) {
 	c.JSON(status, gin.H{"error": err.Error()})
 }
 
+func primaryPersonaSummary(item *session.Session) any {
+	if item == nil || item.PersonaResult == nil {
+		return nil
+	}
+	return item.PersonaResult.PrimaryPersona
+}
+
 var indexHTML = `<!doctype html>
 <html>
 <head>
@@ -479,6 +499,7 @@ var indexHTML = `<!doctype html>
   <button onclick="analyze()">Analyze</button>
   <p id="status">No session yet.</p>
   <p id="link"></p>
+  <div id="persona" style="display:none"></div>
   <p><a id="report" href="#" target="_blank" style="display:none">Open report</a></p>
   <script>
     let sessionID = "";
@@ -517,6 +538,11 @@ var indexHTML = `<!doctype html>
         const a = document.getElementById("report");
         a.href = "/api/sessions/" + sessionID + "/report";
         a.style.display = "inline";
+      }
+      if (data.primary_persona) {
+        const card = document.getElementById("persona");
+        card.style.display = "block";
+        card.innerHTML = '<div style="display:grid;grid-template-columns:120px 1fr;gap:16px;align-items:center;border:1px solid #ddd;border-radius:8px;padding:16px;margin:16px 0"><img src="' + data.primary_persona.image_url + '" alt="' + data.primary_persona.shorthand + '" style="width:120px;height:auto;border-radius:8px"><div><div style="font-size:12px;color:#666">BSPI Top1 Persona</div><div style="font-weight:700;font-size:20px">' + data.primary_persona.shorthand + ' / ' + data.primary_persona.chinese_label + '</div><div style="margin-top:6px">' + data.primary_persona.one_liner + '</div></div></div>';
       }
       if (!["done", "failed"].includes(data.status)) setTimeout(poll, 2000);
     }

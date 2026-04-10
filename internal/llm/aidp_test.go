@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -157,5 +158,60 @@ func TestAIDPClientRetriesWhenLengthConsumesAllContent(t *testing.T) {
 	}
 	if seenMaxTokens[0] != 5000 || seenMaxTokens[1] != 10000 || seenMaxTokens[2] != 20000 {
 		t.Fatalf("max_tokens sequence = %#v", seenMaxTokens)
+	}
+}
+
+func TestAIDPClientRetriesOnceWhenValidatorRejectsOutput(t *testing.T) {
+	call := 0
+	var prompts []string
+	httpClient := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		call++
+		var body struct {
+			Messages []struct {
+				Content []struct {
+					Text string `json:"text"`
+				} `json:"content"`
+			} `json:"messages"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		prompts = append(prompts, body.Messages[0].Content[0].Text)
+		response := `{"choices":[{"finish_reason":"stop","message":{"role":"assistant","content":"{\"primary_persona\":\"UNKNOWN\"}","reasoning_content":""}}]}`
+		if call == 2 {
+			response = `{"choices":[{"finish_reason":"stop","message":{"role":"assistant","content":"{\"primary_persona\":\"PRISM\"}","reasoning_content":""}}]}`
+		}
+		return &http.Response{
+			StatusCode: 200,
+			Header:     make(http.Header),
+			Body:       io.NopCloser(bytes.NewBufferString(response)),
+			Request:    r,
+		}, nil
+	})}
+
+	client := NewAIDPClient(Config{
+		URL:       "https://aidp.test/api/modelhub/online/v2/crawl",
+		AK:        "ak-test",
+		Model:     "gpt-5.4-2026-03-05",
+		MaxTokens: 5000,
+	}, httpClient)
+
+	report, err := client.GenerateWithValidation(context.Background(), "analysis input", func(content string) error {
+		if !strings.Contains(content, `"primary_persona":"PRISM"`) {
+			return fmt.Errorf("primary_persona must be one of the BSPI catalog values")
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report != `{"primary_persona":"PRISM"}` {
+		t.Fatalf("report = %q", report)
+	}
+	if len(prompts) != 2 {
+		t.Fatalf("calls = %d, want 2", len(prompts))
+	}
+	if !strings.Contains(prompts[1], "没有通过校验") {
+		t.Fatalf("retry prompt = %q", prompts[1])
 	}
 }

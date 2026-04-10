@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"feishu-personality-agent/internal/persona"
 )
 
 type Status string
@@ -23,16 +25,17 @@ const (
 )
 
 type Session struct {
-	ID              string    `json:"id"`
-	Status          Status    `json:"status"`
-	Dir             string    `json:"dir"`
-	VerificationURL string    `json:"verification_url,omitempty"`
-	DeviceCode      string    `json:"device_code,omitempty"`
-	Error           string    `json:"error,omitempty"`
-	ReportMarkdown  string    `json:"report_markdown,omitempty"`
-	ReportHTML      string    `json:"report_html,omitempty"`
-	CreatedAt       time.Time `json:"created_at"`
-	UpdatedAt       time.Time `json:"updated_at"`
+	ID              string          `json:"id"`
+	Status          Status          `json:"status"`
+	Dir             string          `json:"dir"`
+	VerificationURL string          `json:"verification_url,omitempty"`
+	DeviceCode      string          `json:"device_code,omitempty"`
+	Error           string          `json:"error,omitempty"`
+	ReportMarkdown  string          `json:"report_markdown,omitempty"`
+	ReportHTML      string          `json:"report_html,omitempty"`
+	PersonaResult   *persona.Result `json:"persona_result,omitempty"`
+	CreatedAt       time.Time       `json:"created_at"`
+	UpdatedAt       time.Time       `json:"updated_at"`
 }
 
 type FileStore struct {

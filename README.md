@@ -1,6 +1,6 @@
 # Feishu Personality Agent
 
-Local web agent for collecting authorized Feishu data through `lark-cli` and generating an MBTI-like behavior report with the configured AIDP ModelHub LLM endpoint.
+Local web agent for collecting authorized Feishu data through `lark-cli` and generating a BSPI Top1 persona report with the configured AIDP ModelHub LLM endpoint.
 
 ## Quick Start
 
@@ -26,6 +26,7 @@ After the first successful login, the agent reuses the local `lark-cli` profile 
 AIDP_AK=xxx
 AIDP_MODELHUB_URL=https://aidp.bytedance.net/api/modelhub/online/v2/crawl
 AIDP_MODEL=gpt-5.4-2026-03-05
+AIDP_MAX_TOKENS=5000
 # Optional: preconfigure these to skip the app setup link.
 LARK_APP_ID=
 LARK_APP_SECRET=
@@ -35,6 +36,7 @@ LARK_APP_SECRET=
 
 - `POST /api/sessions` creates a local session.
 - `POST /api/sessions/{id}/login` returns the current Feishu link when authorization is needed. If an existing local token is valid or refreshable, the session becomes authenticated without returning a new link.
-- `GET /api/sessions/{id}/status` returns session state.
+- `GET /api/sessions/{id}/status` returns session state and, once ready, the Top1 BSPI persona summary used by the home page card.
 - `POST /api/sessions/{id}/analyze` starts read-only collection and report generation.
-- `GET /api/sessions/{id}/report` returns the local HTML report.
+- `GET /api/sessions/{id}/report` returns the local HTML result page with the persona image, official persona definition, and LLM-generated analysis.
+- `GET /assets/photos/{SHORTHAND}.png` serves the local persona art used by the home page and report page.

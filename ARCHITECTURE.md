@@ -2,13 +2,15 @@
 
 The agent is a local Gin HTTP service with three boundaries:
 
-- HTTP server and web UI: session creation, login link presentation, status polling, analysis trigger, report rendering.
+- HTTP server and web UI: session creation, login link presentation, status polling, analysis trigger, photo asset serving, and BSPI result rendering.
 - Sandbox executor: process-level isolation around `lark-cli`, with an allowlist, per-session working directory, and per-session `LARKSUITE_CLI_CONFIG_DIR`.
-- Analysis pipeline: read-only Feishu collection, raw session-private logs, bounded analysis bundle, AIDP ModelHub report generation.
+- Analysis pipeline: read-only Feishu collection, raw session-private logs, BSPI persona prompt construction, AIDP ModelHub structured classification, and local report generation.
 
 The service keeps a reusable local `lark-cli` profile at `data/lark-cli/` and seeds each session sandbox from it. User tokens remain managed by `lark-cli` storage; session files do not store raw access tokens.
 
 No Feishu write commands are part of the first version.
+
+The BSPI catalog is stored locally in the repo and contains 20 canonical personas. The LLM only selects a single Top1 shorthand from that catalog; the server owns the official Chinese label, image path, one-line image, dimension metadata, and canonical persona description. If the model returns an unknown or incomplete result, the server retries once with validation feedback and otherwise fails closed.
 
 Session states are `created`, `config_pending`, `login_pending`, `authenticated`, `collecting`, `analyzing`, `done`, and `failed`.
 

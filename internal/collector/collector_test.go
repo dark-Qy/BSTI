@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"feishu-personality-agent/internal/persona"
 	"feishu-personality-agent/internal/sandbox"
 )
 
@@ -75,8 +76,8 @@ func TestBuildAnalysisPromptPreservesOriginalData(t *testing.T) {
 		{Domain: "vc", Stdout: strings.Repeat("f", 2000)},
 	}}
 
-	prompt := BuildAnalysisPrompt(bundle)
-	for _, want := range []string{"不要展示思考过程", "直接输出最终 Markdown"} {
+	prompt := BuildAnalysisPrompt(bundle, persona.All())
+	for _, want := range []string{"不要展示思考过程", "只输出合法 JSON", "primary_persona", "## BSPI Catalog", "## Authorized Data", "PRISM", "变色龙"} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("prompt missing instruction %q", want)
 		}

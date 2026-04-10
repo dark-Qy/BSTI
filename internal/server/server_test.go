@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"feishu-personality-agent/internal/config"
+	"feishu-personality-agent/internal/persona"
 	"feishu-personality-agent/internal/session"
 )
 
@@ -52,6 +53,55 @@ func TestServerCreatesSessionAndStartsLogin(t *testing.T) {
 	}
 	if login["verification_url"] != "https://verify.example" {
 		t.Fatalf("verification_url = %q", login["verification_url"])
+	}
+}
+
+func TestStatusIncludesPrimaryPersonaSummaryWhenReportIsReady(t *testing.T) {
+	store := session.NewFileStore(t.TempDir())
+	srv := New(ServerConfig{
+		App:   config.Config{},
+		Store: store,
+	})
+
+	item, err := store.Create()
+	if err != nil {
+		t.Fatal(err)
+	}
+	item.Status = session.StatusDone
+	item.ReportHTML = filepath.Join(item.Dir, "report.html")
+	item.PersonaResult = &persona.Result{
+		PrimaryPersona: persona.Primary{
+			Shorthand:          "PRISM",
+			ChineseLabel:       "变色龙",
+			ImageURL:           "/assets/photos/PRISM.png",
+			ByteStyleDimension: "多元兼容",
+			AnalysisDimension:  "多元文化适应力",
+			OneLiner:           "多线程文化模拟器，每个频道都是真的",
+		},
+	}
+	if err := store.Save(item); err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/sessions/"+item.ID+"/status", nil)
+	w := httptest.NewRecorder()
+	srv.Router().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status code = %d body=%s", w.Code, w.Body.String())
+	}
+
+	var resp struct {
+		ReportReady    bool            `json:"report_ready"`
+		PrimaryPersona persona.Primary `json:"primary_persona"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	if !resp.ReportReady {
+		t.Fatal("report_ready = false")
+	}
+	if resp.PrimaryPersona.Shorthand != "PRISM" {
+		t.Fatalf("primary_persona = %#v", resp.PrimaryPersona)
 	}
 }
 

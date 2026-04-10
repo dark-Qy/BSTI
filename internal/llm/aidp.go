@@ -33,9 +33,15 @@ func NewAIDPClient(cfg Config, httpClient *http.Client) *AIDPClient {
 }
 
 func (c *AIDPClient) Generate(ctx context.Context, prompt string) (string, error) {
+	return c.GenerateWithValidation(ctx, prompt, nil)
+}
+
+func (c *AIDPClient) GenerateWithValidation(ctx context.Context, prompt string, validate func(string) error) (string, error) {
 	maxTokens := startingMaxTokens(c.cfg.MaxTokens)
+	requestPrompt := prompt
+	validationAttempts := 0
 	for {
-		body, err := c.buildRequestBody(prompt, maxTokens)
+		body, err := c.buildRequestBody(requestPrompt, maxTokens)
 		if err != nil {
 			return "", err
 		}
@@ -45,7 +51,18 @@ func (c *AIDPClient) Generate(ctx context.Context, prompt string) (string, error
 		}
 		content, ok := extractReportContent(raw)
 		if ok {
-			return content, nil
+			if validate == nil {
+				return content, nil
+			}
+			if err := validate(content); err == nil {
+				return content, nil
+			} else if validationAttempts == 0 {
+				validationAttempts++
+				requestPrompt = prompt + "\n\n你上一次的输出没有通过校验，原因是：" + err.Error() + "。请重新输出一次，只输出合法 JSON。"
+				continue
+			} else {
+				return "", fmt.Errorf("AIDP response validation failed: %w", err)
+			}
 		}
 		if !shouldRetryEmptyLength(raw) {
 			return "", fmt.Errorf("AIDP response did not include report content (shape: %s)", aidpResponseShape(raw))

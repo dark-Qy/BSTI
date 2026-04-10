@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"feishu-personality-agent/internal/persona"
 	"feishu-personality-agent/internal/sandbox"
 )
 
@@ -86,9 +87,18 @@ func (c *Collector) Collect(ctx context.Context, sessionDir string, now time.Tim
 	return bundle, nil
 }
 
-func BuildAnalysisPrompt(bundle Bundle) string {
+func BuildAnalysisPrompt(bundle Bundle, catalog []persona.Definition) string {
 	var b strings.Builder
-	b.WriteString("你是一个谨慎的人格行为分析助手。不要做医学或心理诊断。不要展示思考过程。直接输出最终 Markdown。\n\n")
+	b.WriteString("你是 BSPI（ByteStyle Personality Index）人格分析助手。不要做医学或心理诊断，不要展示思考过程。\n")
+	b.WriteString("你必须只从给定的 20 个 BSPI 人格中选择 1 个最匹配的主人格，并只输出合法 JSON，不要输出 Markdown、解释文字或代码块外文本。\n")
+	b.WriteString("JSON 字段必须严格为：primary_persona, summary, evidence, communication_style, work_preferences, blind_spots, confidence, disclaimer。\n")
+	b.WriteString("其中 primary_persona 必须是给定的人格 shorthand 之一；evidence 必须是字符串数组。\n\n")
+	if len(catalog) > 0 {
+		b.WriteString("## BSPI Catalog\n")
+		b.WriteString(persona.CompactPromptCatalog(catalog))
+		b.WriteString("\n")
+	}
+	b.WriteString("## Authorized Data\n")
 	for _, domain := range bundle.Domains {
 		fmt.Fprintf(&b, "## %s\n", domain.Domain)
 		if domain.Error != "" {
@@ -97,7 +107,7 @@ func BuildAnalysisPrompt(bundle Bundle) string {
 		b.WriteString(domain.Stdout)
 		b.WriteString("\n\n")
 	}
-	b.WriteString("请用简洁 Markdown 输出：人格倾向、证据、沟通风格、工作偏好、风险/盲区、置信度、免责声明。\n")
+	b.WriteString("请基于授权数据完成 20 选 1，并输出 JSON。\n")
 	return b.String()
 }
 
