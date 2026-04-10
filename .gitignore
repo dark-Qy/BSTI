@@ -1,0 +1,9 @@
+.env
+data/
+.gocache/
+.gomodcache/
+*.log
+agent
+bin/
+dist/
+coverage.out
