@@ -104,6 +104,67 @@ func TestServerAutoConfiguresAppWhenCredentialsAreMissing(t *testing.T) {
 	t.Fatalf("session did not advance to auth login: %#v", loaded)
 }
 
+func TestServerConfigProcessSurvivesLoginRequestContext(t *testing.T) {
+	store := session.NewFileStore(t.TempDir())
+	srv := New(ServerConfig{
+		App: config.Config{
+			LarkCLIBin: os.Args[0],
+		},
+		Store: store,
+	})
+	releaseFile := filepath.Join(t.TempDir(), "release-config")
+	t.Setenv("FAKE_LARK_CLI_SERVER", "1")
+	t.Setenv("FAKE_CONFIG_URL", "https://config.example/page/cli")
+	t.Setenv("FAKE_AUTH_URL", "https://auth.example/verify")
+	t.Setenv("FAKE_CONFIG_WAIT_FILE", releaseFile)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/sessions", nil)
+	w := httptest.NewRecorder()
+	srv.Router().ServeHTTP(w, req)
+	var created map[string]string
+	if err := json.Unmarshal(w.Body.Bytes(), &created); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	req = httptest.NewRequest(http.MethodPost, "/api/sessions/"+created["session_id"]+"/login", nil).WithContext(ctx)
+	w = httptest.NewRecorder()
+	srv.Router().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("login status = %d body=%s", w.Code, w.Body.String())
+	}
+	cancel()
+
+	time.Sleep(100 * time.Millisecond)
+	loaded, err := store.Get(created["session_id"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Status == session.StatusFailed {
+		t.Fatalf("session failed after request context cancellation: %#v", loaded)
+	}
+	if loaded.VerificationURL != "https://config.example/page/cli" {
+		t.Fatalf("verification_url = %q", loaded.VerificationURL)
+	}
+
+	if err := os.WriteFile(releaseFile, []byte("done"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		loaded, err = store.Get(created["session_id"])
+		if err != nil {
+			t.Fatal(err)
+		}
+		if loaded.VerificationURL == "https://auth.example/verify" && (loaded.Status == session.StatusLoginPending || loaded.Status == session.StatusAuthenticated) {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	loaded, _ = store.Get(created["session_id"])
+	t.Fatalf("session did not advance after config completed: %#v", loaded)
+}
+
 func TestMain(m *testing.M) {
 	if os.Getenv("FAKE_LARK_CLI_SERVER") == "1" {
 		args := os.Args[1:]
@@ -112,6 +173,15 @@ func TestMain(m *testing.M) {
 			configDir := os.Getenv("LARKSUITE_CLI_CONFIG_DIR")
 			_ = os.MkdirAll(configDir, 0700)
 			_ = os.WriteFile(filepath.Join(configDir, "config.json"), []byte(`{"apps":[{"appId":"cli_fake","appSecret":"fake","brand":"feishu","users":[]}]}`), 0600)
+			if waitFile := os.Getenv("FAKE_CONFIG_WAIT_FILE"); waitFile != "" {
+				deadline := time.Now().Add(5 * time.Second)
+				for time.Now().Before(deadline) {
+					if _, err := os.Stat(waitFile); err == nil {
+						break
+					}
+					time.Sleep(10 * time.Millisecond)
+				}
+			}
 			os.Exit(0)
 		}
 		if len(args) >= 5 && args[0] == "auth" && args[1] == "login" && args[4] == "--no-wait" {

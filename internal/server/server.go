@@ -176,14 +176,17 @@ func (s *Server) startConfigThenLogin(ctx context.Context, item *session.Session
 	if err := os.MkdirAll(exe.ConfigDir(), 0700); err != nil {
 		return "", err
 	}
-	cmd := exec.CommandContext(ctx, s.cfg.LarkCLIBin, "config", "init", "--new")
+	processCtx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	cmd := exec.CommandContext(processCtx, s.cfg.LarkCLIBin, "config", "init", "--new")
 	cmd.Dir = item.Dir
 	cmd.Env = append(os.Environ(), "LARKSUITE_CLI_CONFIG_DIR="+exe.ConfigDir())
 	stderr, err := cmd.StderrPipe()
 	if err != nil {
+		cancel()
 		return "", err
 	}
 	if err := cmd.Start(); err != nil {
+		cancel()
 		return "", err
 	}
 
@@ -205,22 +208,28 @@ func (s *Server) startConfigThenLogin(ctx context.Context, item *session.Session
 		item.Status = session.StatusConfigPending
 		item.VerificationURL = configURL
 		if err := s.store.Save(item); err != nil {
+			cancel()
+			_ = cmd.Process.Kill()
+			_ = cmd.Wait()
 			return "", err
 		}
-		go s.waitConfigThenStartOAuth(cmd, item.ID)
+		go s.waitConfigThenStartOAuth(cmd, cancel, item.ID)
 		return configURL, nil
 	case <-time.After(30 * time.Second):
+		cancel()
 		_ = cmd.Process.Kill()
 		_ = cmd.Wait()
 		return "", errors.New("timed out waiting for app configuration URL")
 	case <-ctx.Done():
+		cancel()
 		_ = cmd.Process.Kill()
 		_ = cmd.Wait()
 		return "", ctx.Err()
 	}
 }
 
-func (s *Server) waitConfigThenStartOAuth(cmd *exec.Cmd, sessionID string) {
+func (s *Server) waitConfigThenStartOAuth(cmd *exec.Cmd, cancel context.CancelFunc, sessionID string) {
+	defer cancel()
 	if err := cmd.Wait(); err != nil {
 		current, loadErr := s.store.Get(sessionID)
 		if loadErr == nil {
@@ -396,7 +405,9 @@ var indexHTML = `<!doctype html>
       const res = await fetch("/api/sessions/" + sessionID + "/status");
       const data = await res.json();
       document.getElementById("status").textContent = JSON.stringify(data);
-      if (data.verification_url) {
+      if (data.status === "authenticated") {
+        document.getElementById("link").textContent = "Feishu authorization completed. Click Analyze to generate the report.";
+      } else if (data.verification_url) {
         document.getElementById("link").innerHTML = '<a href="' + data.verification_url + '" target="_blank">Open current Feishu link</a>';
       }
       if (data.report_ready) {
