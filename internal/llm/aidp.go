@@ -88,6 +88,11 @@ type aidpChoice struct {
 	} `json:"message"`
 }
 
+type aidpRawChoice struct {
+	FinishReason string                     `json:"finish_reason"`
+	Message      map[string]json.RawMessage `json:"message"`
+}
+
 func extractReportContent(raw map[string]json.RawMessage) (string, bool) {
 	var result struct {
 		Choices []aidpChoice `json:"choices"`
@@ -129,27 +134,29 @@ func aidpResponseShape(raw map[string]json.RawMessage) string {
 	}
 	sort.Strings(keys)
 
-	var result struct {
-		Choices []aidpChoice `json:"choices"`
-	}
 	choicesLen := 0
 	messageKeys := []string(nil)
 	contentType := "missing"
+	contentLen := -1
+	finishReason := ""
+	var result struct {
+		Choices []aidpRawChoice `json:"choices"`
+	}
 	if err := unmarshalRaw(raw, &result); err == nil {
 		choicesLen = len(result.Choices)
 		if choicesLen > 0 {
-			var message map[string]json.RawMessage
-			messageBytes, _ := json.Marshal(result.Choices[0].Message)
-			if err := json.Unmarshal(messageBytes, &message); err == nil {
-				for key := range message {
-					messageKeys = append(messageKeys, key)
-				}
-				sort.Strings(messageKeys)
+			choice := result.Choices[0]
+			finishReason = choice.FinishReason
+			for key := range choice.Message {
+				messageKeys = append(messageKeys, key)
 			}
-			contentType = jsonType(result.Choices[0].Message.Content)
+			sort.Strings(messageKeys)
+			content := choice.Message["content"]
+			contentType = jsonType(content)
+			contentLen = jsonStringLen(content)
 		}
 	}
-	return fmt.Sprintf("top_level_keys=%s choices_len=%d message_keys=%s content_type=%s", strings.Join(keys, ","), choicesLen, strings.Join(messageKeys, ","), contentType)
+	return fmt.Sprintf("top_level_keys=%s choices_len=%d message_keys=%s content_type=%s content_len=%d finish_reason=%s", strings.Join(keys, ","), choicesLen, strings.Join(messageKeys, ","), contentType, contentLen, finishReason)
 }
 
 func unmarshalRaw(raw map[string]json.RawMessage, target any) error {
@@ -178,4 +185,12 @@ func jsonType(raw json.RawMessage) string {
 	default:
 		return "number"
 	}
+}
+
+func jsonStringLen(raw json.RawMessage) int {
+	var text string
+	if err := json.Unmarshal(raw, &text); err != nil {
+		return -1
+	}
+	return len(text)
 }

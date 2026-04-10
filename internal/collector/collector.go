@@ -12,6 +12,8 @@ import (
 	"feishu-personality-agent/internal/sandbox"
 )
 
+const maxAnalysisDomainChars = 2500
+
 type Runner interface {
 	Run(context.Context, []string) (sandbox.Output, error)
 }
@@ -95,8 +97,8 @@ func BuildAnalysisPrompt(bundle Bundle) string {
 			fmt.Fprintf(&b, "Collection error: %s\n", domain.Error)
 		}
 		text := domain.Stdout
-		if len(text) > 12000 {
-			text = text[:12000] + "\n...[truncated]"
+		if len(text) > maxAnalysisDomainChars {
+			text = text[:maxAnalysisDomainChars] + "\n...[truncated]"
 		}
 		b.WriteString(text)
 		b.WriteString("\n\n")

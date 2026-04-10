@@ -46,7 +46,7 @@ func TestAIDPClientMissingContentErrorIncludesSafeShapeOnly(t *testing.T) {
 		return &http.Response{
 			StatusCode: 200,
 			Header:     make(http.Header),
-			Body:       io.NopCloser(bytes.NewBufferString(`{"id":"chatcmpl_x","choices":[{"message":{"content":[]}}],"usage":{"prompt_tokens":1}}`)),
+			Body:       io.NopCloser(bytes.NewBufferString(`{"id":"chatcmpl_x","choices":[{"finish_reason":"stop","message":{"role":"assistant","content":"","reasoning_content":""}}],"usage":{"prompt_tokens":1}}`)),
 			Request:    r,
 		}, nil
 	})}
@@ -62,7 +62,7 @@ func TestAIDPClientMissingContentErrorIncludesSafeShapeOnly(t *testing.T) {
 		t.Fatal("expected missing content error")
 	}
 	msg := err.Error()
-	for _, want := range []string{"top_level_keys=", "choices_len=1", "content_type=array"} {
+	for _, want := range []string{"top_level_keys=", "choices_len=1", "message_keys=content,reasoning_content,role", "content_type=string", "content_len=0", "finish_reason=stop"} {
 		if !strings.Contains(msg, want) {
 			t.Fatalf("error %q does not include %q", msg, want)
 		}
