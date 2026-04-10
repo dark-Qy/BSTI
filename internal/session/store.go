@@ -40,6 +40,11 @@ type FileStore struct {
 }
 
 func NewFileStore(baseDir string) *FileStore {
+	if abs, err := filepath.Abs(filepath.Clean(baseDir)); err == nil {
+		baseDir = abs
+	} else {
+		baseDir = filepath.Clean(baseDir)
+	}
 	return &FileStore{baseDir: baseDir}
 }
 

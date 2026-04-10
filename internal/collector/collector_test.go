@@ -41,3 +41,25 @@ func TestCollectWritesPrivateRawLogsForCoreDomains(t *testing.T) {
 		t.Fatalf("calls = %d", len(runner.calls))
 	}
 }
+
+func TestCollectOmitsEmptyChatQueryArgument(t *testing.T) {
+	dir := t.TempDir()
+	runner := &fakeRunner{}
+	c := New(runner)
+
+	if _, err := c.Collect(context.Background(), dir, time.Date(2026, 4, 10, 12, 0, 0, 0, time.FixedZone("CST", 8*3600))); err != nil {
+		t.Fatal(err)
+	}
+	if len(runner.calls) == 0 {
+		t.Fatal("no collector calls recorded")
+	}
+	chatArgs := runner.calls[0]
+	for i, arg := range chatArgs {
+		if arg == "" {
+			t.Fatalf("chat arg %d is empty: %#v", i, chatArgs)
+		}
+		if arg == "--query" {
+			t.Fatalf("chat args include --query for blank search: %#v", chatArgs)
+		}
+	}
+}

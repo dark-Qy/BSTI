@@ -1,6 +1,9 @@
 package session
 
-import "testing"
+import (
+	"path/filepath"
+	"testing"
+)
 
 func TestStoreCreatesAndPersistsSession(t *testing.T) {
 	store := NewFileStore(t.TempDir())
@@ -25,5 +28,20 @@ func TestStoreCreatesAndPersistsSession(t *testing.T) {
 	}
 	if loaded.Dir == "" {
 		t.Fatal("session dir is empty")
+	}
+}
+
+func TestStoreNormalizesRelativeBaseDirToAbsoluteSessionDir(t *testing.T) {
+	t.Chdir(t.TempDir())
+	store := NewFileStore("data")
+	s, err := store.Create()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !filepath.IsAbs(s.Dir) {
+		t.Fatalf("session dir = %q, want absolute path", s.Dir)
+	}
+	if got := filepath.Clean(s.Dir); got != s.Dir {
+		t.Fatalf("session dir = %q, want clean path %q", s.Dir, got)
 	}
 }

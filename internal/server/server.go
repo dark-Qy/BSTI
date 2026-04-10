@@ -159,13 +159,106 @@ func (s *Server) report(c *gin.Context) {
 }
 
 func (s *Server) startLogin(ctx context.Context, item *session.Session) (string, error) {
+	seeded, err := s.seedSessionCLIConfig(item)
+	if err != nil {
+		return "", err
+	}
+	if seeded {
+		reused, err := s.tryReuseLogin(ctx, item)
+		if err != nil {
+			return "", err
+		}
+		if reused {
+			return "", nil
+		}
+	}
 	if s.cfg.Feishu.AppID == "" || s.cfg.Feishu.AppSecret == "" {
 		return s.startConfigThenLogin(ctx, item)
 	}
-	if err := writeCLIConfig(item.Dir, s.cfg.Feishu); err != nil {
+	if !seeded {
+		if err := writeCLIConfig(item.Dir, s.cfg.Feishu); err != nil {
+			return "", err
+		}
+	}
+	reused, err := s.tryReuseLogin(ctx, item)
+	if err != nil {
 		return "", err
 	}
+	if reused {
+		return "", nil
+	}
 	return s.startOAuthLogin(ctx, item)
+}
+
+func (s *Server) seedSessionCLIConfig(item *session.Session) (bool, error) {
+	src := filepath.Join(s.sharedCLIConfigDir(item), "config.json")
+	data, err := os.ReadFile(src)
+	if errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	dstDir := sandbox.NewExecutor(s.cfg.LarkCLIBin, item.Dir, 5*time.Minute).ConfigDir()
+	if err := os.MkdirAll(dstDir, 0700); err != nil {
+		return false, err
+	}
+	if err := os.WriteFile(filepath.Join(dstDir, "config.json"), data, 0600); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func (s *Server) persistSessionCLIConfig(item *session.Session) error {
+	src := filepath.Join(sandbox.NewExecutor(s.cfg.LarkCLIBin, item.Dir, 5*time.Minute).ConfigDir(), "config.json")
+	data, err := os.ReadFile(src)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	dstDir := s.sharedCLIConfigDir(item)
+	if err := os.MkdirAll(dstDir, 0700); err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(dstDir, "config.json"), data, 0600)
+}
+
+func (s *Server) sharedCLIConfigDir(item *session.Session) string {
+	dataDir := s.cfg.AgentDataDir
+	if dataDir == "" {
+		dataDir = filepath.Dir(filepath.Dir(item.Dir))
+	}
+	if abs, err := filepath.Abs(filepath.Clean(dataDir)); err == nil {
+		dataDir = abs
+	} else {
+		dataDir = filepath.Clean(dataDir)
+	}
+	return filepath.Join(dataDir, "lark-cli")
+}
+
+func (s *Server) tryReuseLogin(ctx context.Context, item *session.Session) (bool, error) {
+	exe := sandbox.NewExecutor(s.cfg.LarkCLIBin, item.Dir, 30*time.Second)
+	out, err := exe.Run(ctx, []string{"auth", "status"})
+	if err != nil {
+		return false, nil
+	}
+	var status struct {
+		Identity    string `json:"identity"`
+		TokenStatus string `json:"tokenStatus"`
+	}
+	if err := json.Unmarshal([]byte(out.Stdout), &status); err != nil {
+		return false, nil
+	}
+	if status.Identity != "user" || (status.TokenStatus != "valid" && status.TokenStatus != "needs_refresh") {
+		return false, nil
+	}
+	item.Status = session.StatusAuthenticated
+	item.VerificationURL = ""
+	item.DeviceCode = ""
+	item.Error = ""
+	return true, s.store.Save(item)
 }
 
 func (s *Server) startConfigThenLogin(ctx context.Context, item *session.Session) (string, error) {
@@ -243,6 +336,12 @@ func (s *Server) waitConfigThenStartOAuth(cmd *exec.Cmd, cancel context.CancelFu
 	if err != nil {
 		return
 	}
+	if err := s.persistSessionCLIConfig(current); err != nil {
+		current.Status = session.StatusFailed
+		current.Error = err.Error()
+		_ = s.store.Save(current)
+		return
+	}
 	if _, err := s.startOAuthLogin(context.Background(), current); err != nil {
 		current.Status = session.StatusFailed
 		current.Error = err.Error()
@@ -282,6 +381,10 @@ func (s *Server) startOAuthLogin(ctx context.Context, item *session.Session) (st
 		} else {
 			current.Status = session.StatusAuthenticated
 			current.Error = ""
+			if err := s.persistSessionCLIConfig(current); err != nil {
+				current.Status = session.StatusFailed
+				current.Error = err.Error()
+			}
 		}
 		_ = s.store.Save(current)
 	}()

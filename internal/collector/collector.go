@@ -55,11 +55,13 @@ func (c *Collector) Collect(ctx context.Context, sessionDir string, now time.Tim
 		"time_range": map[string]string{"start_time": startISO, "end_time": endISO},
 	})
 
+	chatArgs := []string{"im", "+messages-search", "--start", startISO, "--end", endISO, "--page-size", "50", "--page-limit", "5", "--format", "json"}
+
 	commands := []struct {
 		domain string
 		args   []string
 	}{
-		{"chat", []string{"im", "+messages-search", "--query", "", "--start", startISO, "--end", endISO, "--page-size", "50", "--page-limit", "5", "--format", "json"}},
+		{"chat", chatArgs},
 		{"docs", []string{"docs", "+search", "--filter", string(j), "--page-size", "20", "--format", "json"}},
 		{"calendar", []string{"calendar", "+agenda", "--start", startDate, "--end", endDate, "--format", "json"}},
 		{"task", []string{"task", "+get-my-tasks", "--created_at", "-30d", "--page-limit", "5", "--format", "json"}},

@@ -6,6 +6,8 @@ The agent is a local Gin HTTP service with three boundaries:
 - Sandbox executor: process-level isolation around `lark-cli`, with an allowlist, per-session working directory, and per-session `LARKSUITE_CLI_CONFIG_DIR`.
 - Analysis pipeline: read-only Feishu collection, raw session-private logs, bounded analysis bundle, AIDP ModelHub report generation.
 
+The service keeps a reusable local `lark-cli` profile at `data/lark-cli/` and seeds each session sandbox from it. User tokens remain managed by `lark-cli` storage; session files do not store raw access tokens.
+
 No Feishu write commands are part of the first version.
 
 Session states are `created`, `config_pending`, `login_pending`, `authenticated`, `collecting`, `analyzing`, `done`, and `failed`.
@@ -18,4 +20,4 @@ The sandbox command allowlist only permits:
 - `lark-cli config init --new`
 - read-only shortcuts for `im`, `docs`, `calendar`, `task`, `mail`, and `vc`
 
-If `LARK_APP_ID` and `LARK_APP_SECRET` are present, the server writes a per-session CLI config with a file-backed app secret. If they are absent, the server runs `lark-cli config init --new`, returns the app setup URL, waits for it to complete, and then starts the normal OAuth device login. The setup process uses a service-owned timeout context after the URL is returned, so finishing the HTTP request that delivered the setup link does not kill the in-progress CLI login flow.
+If a seeded session profile has a valid or refreshable user token according to `lark-cli auth status`, the session becomes authenticated without starting a new OAuth flow. If `LARK_APP_ID` and `LARK_APP_SECRET` are present and no reusable login is available, the server writes a per-session CLI config with a file-backed app secret. If they are absent, the server runs `lark-cli config init --new`, returns the app setup URL, waits for it to complete, and then starts the normal OAuth device login. The setup process uses a service-owned timeout context after the URL is returned, so finishing the HTTP request that delivered the setup link does not kill the in-progress CLI login flow.
