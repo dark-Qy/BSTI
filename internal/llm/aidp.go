@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/http"
 	"net/url"
 	"sort"
@@ -32,18 +33,41 @@ func NewAIDPClient(cfg Config, httpClient *http.Client) *AIDPClient {
 }
 
 func (c *AIDPClient) Generate(ctx context.Context, prompt string) (string, error) {
+	maxTokens := startingMaxTokens(c.cfg.MaxTokens)
+	for {
+		body, err := c.buildRequestBody(prompt, maxTokens)
+		if err != nil {
+			return "", err
+		}
+		raw, err := c.doRequest(ctx, body)
+		if err != nil {
+			return "", err
+		}
+		content, ok := extractReportContent(raw)
+		if ok {
+			return content, nil
+		}
+		if !shouldRetryEmptyLength(raw) {
+			return "", fmt.Errorf("AIDP response did not include report content (shape: %s)", aidpResponseShape(raw))
+		}
+		next := retryMaxTokens(maxTokens)
+		if next <= maxTokens {
+			return "", fmt.Errorf("AIDP response did not include report content (shape: %s)", aidpResponseShape(raw))
+		}
+		maxTokens = next
+	}
+}
+
+func (c *AIDPClient) buildRequestBody(prompt string, maxTokens int) (map[string]any, error) {
 	endpoint, err := url.Parse(c.cfg.URL)
 	if err != nil {
-		return "", fmt.Errorf("invalid AIDP URL")
+		return nil, fmt.Errorf("invalid AIDP URL")
 	}
-	query := endpoint.Query()
-	query.Set("ak", c.cfg.AK)
-	endpoint.RawQuery = query.Encode()
-
-	body := map[string]any{
+	_ = endpoint
+	return map[string]any{
 		"stream":     c.cfg.Stream,
 		"model":      c.cfg.Model,
-		"max_tokens": c.cfg.MaxTokens,
+		"max_tokens": maxTokens,
 		"messages": []map[string]any{
 			{
 				"role": "user",
@@ -52,34 +76,41 @@ func (c *AIDPClient) Generate(ctx context.Context, prompt string) (string, error
 				},
 			},
 		},
+	}, nil
+}
+
+func (c *AIDPClient) doRequest(ctx context.Context, body map[string]any) (map[string]json.RawMessage, error) {
+	endpoint, err := url.Parse(c.cfg.URL)
+	if err != nil {
+		return nil, fmt.Errorf("invalid AIDP URL")
 	}
+	query := endpoint.Query()
+	query.Set("ak", c.cfg.AK)
+	endpoint.RawQuery = query.Encode()
+
 	payload, err := json.Marshal(body)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint.String(), bytes.NewReader(payload))
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("AIDP request failed: %w", err)
+		return nil, fmt.Errorf("AIDP request failed: %w", err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return "", fmt.Errorf("AIDP request failed with status %d", resp.StatusCode)
+		return nil, fmt.Errorf("AIDP request failed with status %d", resp.StatusCode)
 	}
 
 	var raw map[string]json.RawMessage
 	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
-		return "", err
+		return nil, err
 	}
-	content, ok := extractReportContent(raw)
-	if !ok {
-		return "", fmt.Errorf("AIDP response did not include report content (shape: %s)", aidpResponseShape(raw))
-	}
-	return content, nil
+	return raw, nil
 }
 
 type aidpChoice struct {
@@ -193,4 +224,30 @@ func jsonStringLen(raw json.RawMessage) int {
 		return -1
 	}
 	return len(text)
+}
+
+func shouldRetryEmptyLength(raw map[string]json.RawMessage) bool {
+	var result struct {
+		Choices []aidpRawChoice `json:"choices"`
+	}
+	if err := unmarshalRaw(raw, &result); err != nil || len(result.Choices) == 0 {
+		return false
+	}
+	choice := result.Choices[0]
+	content := choice.Message["content"]
+	return choice.FinishReason == "length" && jsonType(content) == "string" && jsonStringLen(content) == 0
+}
+
+func startingMaxTokens(current int) int {
+	if current < 5000 {
+		return 5000
+	}
+	return current
+}
+
+func retryMaxTokens(current int) int {
+	if current > math.MaxInt/2 {
+		return current
+	}
+	return current * 2
 }

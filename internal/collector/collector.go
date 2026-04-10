@@ -12,8 +12,6 @@ import (
 	"feishu-personality-agent/internal/sandbox"
 )
 
-const maxAnalysisDomainChars = 2500
-
 type Runner interface {
 	Run(context.Context, []string) (sandbox.Output, error)
 }
@@ -90,20 +88,16 @@ func (c *Collector) Collect(ctx context.Context, sessionDir string, now time.Tim
 
 func BuildAnalysisPrompt(bundle Bundle) string {
 	var b strings.Builder
-	b.WriteString("你是一个谨慎的人格行为分析助手。基于用户授权的飞书数据，生成 MBTI-like 行为风格报告。不要做医学或心理诊断。\n\n")
+	b.WriteString("你是一个谨慎的人格行为分析助手。不要做医学或心理诊断。不要展示思考过程。直接输出最终 Markdown。\n\n")
 	for _, domain := range bundle.Domains {
-		fmt.Fprintf(&b, "## Domain: %s\n", domain.Domain)
+		fmt.Fprintf(&b, "## %s\n", domain.Domain)
 		if domain.Error != "" {
-			fmt.Fprintf(&b, "Collection error: %s\n", domain.Error)
+			fmt.Fprintf(&b, "error: %s\n", domain.Error)
 		}
-		text := domain.Stdout
-		if len(text) > maxAnalysisDomainChars {
-			text = text[:maxAnalysisDomainChars] + "\n...[truncated]"
-		}
-		b.WriteString(text)
+		b.WriteString(domain.Stdout)
 		b.WriteString("\n\n")
 	}
-	b.WriteString("请输出 Markdown，包含：人格倾向、证据、沟通风格、工作偏好、风险/盲区、置信度、免责声明。\n")
+	b.WriteString("请用简洁 Markdown 输出：人格倾向、证据、沟通风格、工作偏好、风险/盲区、置信度、免责声明。\n")
 	return b.String()
 }
 

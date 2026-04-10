@@ -7,6 +7,8 @@ import (
 	"strings"
 )
 
+const defaultAIDPMaxTokens = 5000
+
 type Config struct {
 	AIDP         AIDPConfig
 	Feishu       FeishuConfig
@@ -62,9 +64,12 @@ func Load(path string) (Config, error) {
 		return fallback
 	}
 
-	maxTokens, err := strconv.Atoi(get("AIDP_MAX_TOKENS", "500"))
+	maxTokens, err := strconv.Atoi(get("AIDP_MAX_TOKENS", "5000"))
 	if err != nil || maxTokens <= 0 {
-		maxTokens = 500
+		maxTokens = defaultAIDPMaxTokens
+	}
+	if maxTokens < defaultAIDPMaxTokens {
+		maxTokens = defaultAIDPMaxTokens
 	}
 	stream, _ := strconv.ParseBool(get("AIDP_STREAM", "false"))
 

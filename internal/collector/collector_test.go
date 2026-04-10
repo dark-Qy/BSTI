@@ -65,23 +65,34 @@ func TestCollectOmitsEmptyChatQueryArgument(t *testing.T) {
 	}
 }
 
-func TestBuildAnalysisPromptKeepsTotalInputBounded(t *testing.T) {
+func TestBuildAnalysisPromptPreservesOriginalData(t *testing.T) {
 	bundle := Bundle{Domains: []DomainResult{
-		{Domain: "chat", Stdout: strings.Repeat("a", 20000)},
-		{Domain: "docs", Stdout: strings.Repeat("b", 20000)},
-		{Domain: "calendar", Stdout: strings.Repeat("c", 20000)},
-		{Domain: "task", Stdout: strings.Repeat("d", 20000)},
-		{Domain: "mail", Stdout: strings.Repeat("e", 20000)},
-		{Domain: "vc", Stdout: strings.Repeat("f", 20000)},
+		{Domain: "chat", Stdout: strings.Repeat("a", 2000), Error: strings.Repeat("z", 600)},
+		{Domain: "docs", Stdout: strings.Repeat("b", 2000)},
+		{Domain: "calendar", Stdout: strings.Repeat("c", 2000)},
+		{Domain: "task", Stdout: strings.Repeat("d", 2000)},
+		{Domain: "mail", Stdout: strings.Repeat("e", 2000)},
+		{Domain: "vc", Stdout: strings.Repeat("f", 2000)},
 	}}
 
 	prompt := BuildAnalysisPrompt(bundle)
-	if len(prompt) > 18000 {
-		t.Fatalf("prompt length = %d, want <= 18000", len(prompt))
+	for _, want := range []string{"不要展示思考过程", "直接输出最终 Markdown"} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("prompt missing instruction %q", want)
+		}
 	}
 	for _, domain := range []string{"chat", "docs", "calendar", "task", "mail", "vc"} {
-		if !strings.Contains(prompt, "## Domain: "+domain) {
+		if !strings.Contains(prompt, "## "+domain) {
 			t.Fatalf("prompt missing domain %s", domain)
 		}
+	}
+	if !strings.Contains(prompt, "error: "+strings.Repeat("z", 600)) {
+		t.Fatal("prompt should keep full error details")
+	}
+	if !strings.Contains(prompt, strings.Repeat("a", 2000)) || !strings.Contains(prompt, strings.Repeat("f", 2000)) {
+		t.Fatal("prompt should keep full domain stdout")
+	}
+	if strings.Contains(prompt, "[truncated]") {
+		t.Fatal("prompt should not add truncation markers")
 	}
 }
