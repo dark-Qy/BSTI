@@ -32,8 +32,49 @@ LARK_APP_ID=
 LARK_APP_SECRET=
 ```
 
+The service also reads these optional runtime environment variables:
+
+```dotenv
+LARK_CLI_BIN=lark-cli
+AGENT_DATA_DIR=./data
+HTTP_ADDR=127.0.0.1:8787
+```
+
+## BOE Deployment
+
+Use `build.sh` as the SCM compile script. It builds a Linux binary, copies `photos/`, and assembles a deployment-ready `output/` directory with:
+
+- `agent`
+- `bootstrap.sh`
+- `photos/`
+- `data/`
+
+Recommended SCM settings:
+
+- compile mode: SCM compile script
+- compile script path: `build.sh`
+- artifact upload directory: `output`
+- artifact format: TAR
+
+For local packaging verification on a non-Linux workstation, override the target platform when running the build script, for example `GOOS=darwin GOARCH=arm64 ./build.sh`.
+
+Recommended TCE runtime settings:
+
+- startup script: `<deploy-path>/bootstrap.sh`
+- health check: `GET /healthz` on port `8787`
+- runtime env: provide `AIDP_AK` and any optional Feishu app credentials through TCE environment variables
+
+`bootstrap.sh` keeps local development defaults untouched in Go code while making the deployed service TCE-friendly:
+
+- binds to `0.0.0.0:8787` when `HTTP_ADDR` is unset
+- stores runtime session files under `<deploy-root>/data` when `AGENT_DATA_DIR` is unset
+- starts from the packaged app directory so `photos/` static assets keep working
+
+The packaged service still expects `lark-cli` to be available in the runtime image or environment.
+
 ## API
 
+- `GET /healthz` returns `200` with `{"status":"ok"}` for liveness and readiness checks.
 - `POST /api/sessions` creates a local session.
 - `POST /api/sessions/{id}/login` returns the current Feishu link when authorization is needed. If an existing local token is valid or refreshable, the session becomes authenticated without returning a new link.
 - `GET /api/sessions/{id}/status` returns session state and, once ready, the Top1 BSPI persona summary used by the home page card.

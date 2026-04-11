@@ -6,4 +6,5 @@ data/
 agent
 bin/
 dist/
+output/
 coverage.out

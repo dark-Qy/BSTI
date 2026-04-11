@@ -62,6 +62,7 @@ func New(cfg ServerConfig) *Server {
 	r := gin.New()
 	r.Use(gin.Recovery())
 	r.StaticFS("/assets/photos", gin.Dir("photos", false))
+	r.GET("/healthz", s.healthz)
 	r.GET("/", s.index)
 	r.POST("/api/sessions", s.createSession)
 	r.POST("/api/sessions/:id/login", s.login)
@@ -74,6 +75,10 @@ func New(cfg ServerConfig) *Server {
 
 func (s *Server) Router() http.Handler {
 	return s.router
+}
+
+func (s *Server) healthz(c *gin.Context) {
+	c.JSON(http.StatusOK, gin.H{"status": "ok"})
 }
 
 func (s *Server) index(c *gin.Context) {
