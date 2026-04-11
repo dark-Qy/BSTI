@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -522,6 +523,96 @@ func testServerFallsBackToOAuthForTokenStatus(t *testing.T, tokenStatus string) 
 	}
 }
 
+func TestServerDoesNotReuseAnotherSessionsToken(t *testing.T) {
+	dataDir := t.TempDir()
+	store := session.NewFileStore(dataDir)
+	srv := New(ServerConfig{
+		App: config.Config{
+			AgentDataDir: dataDir,
+			LarkCLIBin:   os.Args[0],
+			Feishu: config.FeishuConfig{
+				AppID:     "cli_fake",
+				AppSecret: "fake-secret",
+			},
+		},
+		Store: store,
+	})
+	t.Setenv("FAKE_LARK_CLI_SERVER", "1")
+	t.Setenv("FAKE_AUTH_STATUS_FROM_CONFIG", "1")
+	t.Setenv("FAKE_AUTH_URL", "https://auth.example/verify")
+
+	req := httptest.NewRequest(http.MethodPost, "/api/sessions", nil)
+	w := httptest.NewRecorder()
+	srv.Router().ServeHTTP(w, req)
+	var createdA map[string]string
+	if err := json.Unmarshal(w.Body.Bytes(), &createdA); err != nil {
+		t.Fatal(err)
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/api/sessions/"+createdA["session_id"]+"/login", nil)
+	w = httptest.NewRecorder()
+	srv.Router().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("session A login status = %d body=%s", w.Code, w.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/api/sessions", nil)
+	w = httptest.NewRecorder()
+	srv.Router().ServeHTTP(w, req)
+	var createdB map[string]string
+	if err := json.Unmarshal(w.Body.Bytes(), &createdB); err != nil {
+		t.Fatal(err)
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/api/sessions/"+createdB["session_id"]+"/login", nil)
+	w = httptest.NewRecorder()
+	srv.Router().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("session B login status = %d body=%s", w.Code, w.Body.String())
+	}
+	var login map[string]string
+	if err := json.Unmarshal(w.Body.Bytes(), &login); err != nil {
+		t.Fatal(err)
+	}
+	if login["verification_url"] != "https://auth.example/verify" {
+		t.Fatalf("verification_url = %q", login["verification_url"])
+	}
+}
+
+func TestSanitizeCLIConfigRemovesUserTokens(t *testing.T) {
+	raw := []byte(`{
+	  "apps": [{
+	    "appId": "cli_fake",
+	    "appSecret": {"path": "app_secret"},
+	    "brand": "feishu",
+	    "users": [{
+	      "identity": "user",
+	      "accessToken": "access",
+	      "refreshToken": "refresh",
+	      "tokenStatus": "valid"
+	    }]
+	  }],
+	  "identity": "user",
+	  "tokenStatus": "valid"
+	}`)
+
+	sanitized, err := sanitizeCLIConfig(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(sanitized)
+	for _, deny := range []string{"accessToken", "refreshToken", `"identity":"user"`, `"tokenStatus":"valid"`, `"users"`} {
+		if strings.Contains(text, deny) {
+			t.Fatalf("sanitized config leaks %q: %s", deny, text)
+		}
+	}
+	for _, want := range []string{`"appId":"cli_fake"`, `"brand":"feishu"`} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("sanitized config missing %q: %s", want, text)
+		}
+	}
+}
+
 func TestMain(m *testing.M) {
 	if os.Getenv("FAKE_LARK_CLI_SERVER") == "1" {
 		args := os.Args[1:]
@@ -542,6 +633,20 @@ func TestMain(m *testing.M) {
 			os.Exit(0)
 		}
 		if len(args) >= 2 && args[0] == "auth" && args[1] == "status" {
+			if os.Getenv("FAKE_AUTH_STATUS_FROM_CONFIG") == "1" {
+				configDir := os.Getenv("LARKSUITE_CLI_CONFIG_DIR")
+				data, err := os.ReadFile(filepath.Join(configDir, "config.json"))
+				if err != nil {
+					_, _ = os.Stdout.WriteString(`{"identity":"bot"}`)
+					os.Exit(0)
+				}
+				if strings.Contains(string(data), `"tokenStatus":"valid"`) {
+					_, _ = os.Stdout.WriteString(`{"identity":"user","tokenStatus":"valid"}`)
+				} else {
+					_, _ = os.Stdout.WriteString(`{"identity":"bot"}`)
+				}
+				os.Exit(0)
+			}
 			status := os.Getenv("FAKE_AUTH_STATUS")
 			if status == "" {
 				_, _ = os.Stdout.WriteString(`{"identity":"bot"}`)
@@ -559,6 +664,15 @@ func TestMain(m *testing.M) {
 			os.Exit(0)
 		}
 		if len(args) >= 4 && args[0] == "auth" && args[1] == "login" && args[2] == "--device-code" {
+			if os.Getenv("FAKE_AUTH_STATUS_FROM_CONFIG") == "1" {
+				configDir := os.Getenv("LARKSUITE_CLI_CONFIG_DIR")
+				path := filepath.Join(configDir, "config.json")
+				data, err := os.ReadFile(path)
+				if err == nil {
+					updated := strings.Replace(string(data), `"brand":"feishu"`, `"brand":"feishu","users":[{"identity":"user","tokenStatus":"valid","accessToken":"access","refreshToken":"refresh"}]`, 1)
+					_ = os.WriteFile(path, []byte(updated), 0600)
+				}
+			}
 			os.Exit(0)
 		}
 		os.Exit(2)

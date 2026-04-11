@@ -11,7 +11,7 @@ The current UI is a React/Vite single-page app served by the Go HTTP service. It
 ## Quick Start
 
 1. Install `lark-cli` and make sure it is available on `PATH`.
-2. Fill in `.env` with the unified `LLM_*` configuration. `LARK_APP_ID` and `LARK_APP_SECRET` are optional; if blank and no reusable local profile exists, the web login flow first asks you to configure a Feishu app through `lark-cli config init --new`.
+2. Fill in `.env` with the unified `LLM_*` configuration. `LARK_APP_ID` and `LARK_APP_SECRET` are optional; if blank and no reusable app template exists, the web login flow first asks you to configure a Feishu app through `lark-cli config init --new`.
 3. Install and build the frontend once:
 
 ```bash
@@ -31,7 +31,7 @@ go run ./cmd/agent
 
 The report is not a psychological diagnosis. It is a behavior-style summary based only on the data the user explicitly authorized.
 
-After the first successful login, the agent reuses the local `lark-cli` profile metadata under `data/lark-cli/` and the token managed by `lark-cli`. A valid or refreshable token skips the browser authorization step on later sessions.
+The service keeps a shared app template under `data/lark-cli/` so later sessions can reuse Feishu app configuration, but each session stores and uses its own `lark-cli` user token under that session's private directory. One user's authorization is not reused by another session.
 
 ## Configuration
 
