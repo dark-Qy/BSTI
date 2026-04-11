@@ -391,6 +391,10 @@ function ResultPage(props: ResultPageProps) {
     onReset,
   } = props
   const persona = report.primary_persona
+  const { frontDisclaimer, footerDisclaimer } = splitDisclaimers(
+    report.share_card.disclaimer_short,
+    report.analysis.disclaimer,
+  )
 
   return (
     <section className="result-page">
@@ -413,7 +417,7 @@ function ResultPage(props: ResultPageProps) {
 
       <div className="report-canvas" ref={reportRef}>
         <div className="report-grid">
-          <section className="hero-column">
+          <section className="hero-column report-region report-region-hero">
             <div className="persona-overline">{persona.shorthand}</div>
             <h1>{persona.chinese_label}</h1>
             <p className="hero-one-liner">{persona.one_liner}</p>
@@ -425,89 +429,91 @@ function ResultPage(props: ResultPageProps) {
             <img alt={persona.shorthand} className="persona-art" src={persona.image_url} />
           </section>
 
-          <section className="report-column">
-            <div className="editorial-section">
-              <div className="section-kicker">Data Portrait</div>
-              <h2>行为解析</h2>
-              <div className="vector-list">
-                {report.behavior_vectors.map((vector) => (
-                  <article className="vector-row" key={vector.label}>
-                    <div className="vector-head">
-                      <div>
-                        <h3>{vector.label}</h3>
-                        <p>{vector.summary}</p>
-                      </div>
-                      <strong>{vector.score}</strong>
-                    </div>
-                    <div className="vector-poles">
-                      <span>{vector.left_pole}</span>
-                      <span>{vector.right_pole}</span>
-                    </div>
-                    <div className="vector-track">
-                      <div className="vector-fill" style={{ width: `${vector.score}%` }} />
-                      <div className="vector-thumb" style={{ left: `${vector.score}%` }} />
-                    </div>
-                  </article>
-                ))}
+          <section className="editorial-section vector-section report-region report-region-vectors">
+            <div className="section-header">
+              <div>
+                <div className="section-kicker">Data Portrait</div>
+                <h2>行为解析</h2>
               </div>
+              <span className="confidence-badge">置信度 {report.analysis.confidence}</span>
             </div>
+            {frontDisclaimer ? <p className="section-meta">{frontDisclaimer}</p> : null}
+            <div className="vector-list">
+              {report.behavior_vectors.map((vector) => (
+                <article className="vector-row" key={vector.label}>
+                  <div className="vector-head">
+                    <div>
+                      <h3>{vector.label}</h3>
+                      <p>{vector.summary}</p>
+                    </div>
+                    <strong>{vector.score}</strong>
+                  </div>
+                  <div className="vector-poles">
+                    <span>{vector.left_pole}</span>
+                    <span>{vector.right_pole}</span>
+                  </div>
+                  <div className="vector-track">
+                    <div className="vector-fill" style={{ width: `${vector.score}%` }} />
+                    <div className="vector-thumb" style={{ left: `${vector.score}%` }} />
+                  </div>
+                </article>
+              ))}
+            </div>
+          </section>
 
-            <div className="editorial-section">
-              <div className="section-kicker">Deep Reading</div>
-              <h2>深度洞察</h2>
-              <div className="insight-copy">
-                <p>{report.analysis.summary}</p>
-                <dl className="insight-list">
-                  <div>
-                    <dt>沟通风格</dt>
-                    <dd>{report.analysis.communication_style}</dd>
-                  </div>
-                  <div>
-                    <dt>工作偏好</dt>
-                    <dd>{report.analysis.work_preferences}</dd>
-                  </div>
-                  <div>
-                    <dt>风险与盲区</dt>
-                    <dd>{report.analysis.blind_spots}</dd>
-                  </div>
-                  <div>
-                    <dt>人格定义</dt>
-                    <dd>{persona.canonical_description}</dd>
-                  </div>
-                </dl>
+          <section className="editorial-section insight-section report-region report-region-insight">
+            <div className="section-kicker">Deep Reading</div>
+            <h2>深度洞察</h2>
+            <div className="insight-copy">
+              <p>{report.analysis.summary}</p>
+              <dl className="insight-list">
+                <div>
+                  <dt>沟通风格</dt>
+                  <dd>{report.analysis.communication_style}</dd>
+                </div>
+                <div>
+                  <dt>工作偏好</dt>
+                  <dd>{report.analysis.work_preferences}</dd>
+                </div>
+                <div>
+                  <dt>风险与盲区</dt>
+                  <dd>{report.analysis.blind_spots}</dd>
+                </div>
+                <div>
+                  <dt>人格定义</dt>
+                  <dd>{persona.canonical_description}</dd>
+                </div>
+              </dl>
+            </div>
+          </section>
+
+          <section className="editorial-section evidence-section report-region report-region-evidence">
+            <div className="section-kicker">Coverage</div>
+            <h2>证据与覆盖</h2>
+            <ul className="evidence-list">
+              {report.analysis.evidence.map((item) => (
+                <li key={item}>{item}</li>
+              ))}
+            </ul>
+            <p className="coverage-summary">{report.coverage.summary}</p>
+            <div className="coverage-meta">
+              <div className="coverage-item">
+                <strong>已纳入：</strong>
+                <span>{report.coverage.successful_domains.join(' / ') || '无'}</span>
+              </div>
+              <div className="coverage-item">
+                <strong>未纳入：</strong>
+                <span>{report.coverage.failed_domains.join(' / ') || '无'}</span>
               </div>
             </div>
           </section>
-        </div>
 
-        <section className="evidence-strip">
-          <div className="editorial-section">
-            <div className="section-kicker">Coverage</div>
-            <h2>证据与覆盖</h2>
-            <div className="coverage-layout">
-              <ul className="evidence-list">
-                {report.analysis.evidence.map((item) => (
-                  <li key={item}>{item}</li>
-                ))}
-              </ul>
-              <div className="coverage-copy">
-                <p>{report.coverage.summary}</p>
-                <div className="coverage-meta">
-                  <span>已纳入：{report.coverage.successful_domains.join(' / ') || '无'}</span>
-                  <span>未纳入：{report.coverage.failed_domains.join(' / ') || '无'}</span>
-                </div>
-              </div>
+          <footer className="report-footer report-region report-region-footer">
+            <div className="footer-stack">
+              {footerDisclaimer ? <p className="footer-disclaimer">{footerDisclaimer}</p> : null}
             </div>
-          </div>
-        </section>
-
-        <footer className="report-footer">
-          <div className="footer-meta">
-            <span>置信度 {report.analysis.confidence}</span>
-            <span>{report.share_card.disclaimer_short}</span>
-            <span>{report.analysis.disclaimer}</span>
-          </div>
-        </footer>
+          </footer>
+        </div>
       </div>
 
       <div className="result-toolbar">
@@ -641,6 +647,43 @@ function friendlyStatus(status: SessionStatus) {
     default:
       return '待开始'
   }
+}
+
+function splitDisclaimers(shortText: string, longText: string) {
+  const shortDisclaimer = normalizeText(shortText)
+  const longDisclaimer = normalizeText(longText)
+
+  if (!shortDisclaimer && !longDisclaimer) {
+    return { frontDisclaimer: '', footerDisclaimer: '' }
+  }
+
+  if (!shortDisclaimer) {
+    return { frontDisclaimer: '', footerDisclaimer: longDisclaimer }
+  }
+
+  if (!longDisclaimer) {
+    return { frontDisclaimer: shortDisclaimer, footerDisclaimer: '' }
+  }
+
+  if (
+    shortDisclaimer === longDisclaimer ||
+    shortDisclaimer.includes(longDisclaimer) ||
+    longDisclaimer.includes(shortDisclaimer)
+  ) {
+    return {
+      frontDisclaimer: shortDisclaimer.length <= longDisclaimer.length ? shortDisclaimer : longDisclaimer,
+      footerDisclaimer: '',
+    }
+  }
+
+  return {
+    frontDisclaimer: shortDisclaimer,
+    footerDisclaimer: longDisclaimer,
+  }
+}
+
+function normalizeText(value: string) {
+  return value.replace(/\s+/g, ' ').trim()
 }
 
 function toMessage(error: unknown) {

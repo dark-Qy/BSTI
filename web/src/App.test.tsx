@@ -83,7 +83,7 @@ describe('App', () => {
     expect(screen.queryByText('Timeline')).not.toBeInTheDocument()
   })
 
-  it('renders the result page as an editorial report with confidence in the footer copy', async () => {
+  it('renders the result page as five explicit grid regions without footer coverage overlap', async () => {
     vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
       const url = String(input)
       if (url.endsWith('/api/sessions')) {
@@ -154,14 +154,26 @@ describe('App', () => {
       throw new Error(`Unhandled fetch: ${url}`)
     })
 
-    render(<App />)
+    const { container } = render(<App />)
 
     expect(await screen.findByText('刨坟者')).toBeInTheDocument()
     expect(screen.getByText('行为解析')).toBeInTheDocument()
+    expect(screen.getByText('深度洞察')).toBeInTheDocument()
+    expect(screen.getByText('证据与覆盖')).toBeInTheDocument()
     expect(screen.getByText('while(true) { 为什么？ }')).toBeInTheDocument()
     await waitFor(() => {
       expect(screen.getByText(/置信度 0.86/)).toBeInTheDocument()
     })
+    expect(screen.getAllByText(/置信度 0.86/)).toHaveLength(1)
+    expect(screen.getAllByText('仅基于授权数据的行为风格观察。')).toHaveLength(1)
+    expect(container.querySelectorAll('.report-stack')).toHaveLength(0)
+
+    const footer = container.querySelector('.report-footer')
+    expect(footer).not.toBeNull()
+    expect(footer?.textContent).not.toContain('已覆盖 2 个数据域。')
+    expect(footer?.textContent).not.toContain('已纳入：chat / docs')
+    expect(footer?.textContent).not.toContain('未纳入：mail')
+
     expect(screen.queryByText('Primary Persona')).not.toBeInTheDocument()
     expect(screen.queryByText('Behavior Vectors')).not.toBeInTheDocument()
   })
