@@ -401,8 +401,17 @@ func (s *Server) startOAuthLogin(ctx context.Context, item *session.Session) (st
 }
 
 func (s *Server) runAnalysis(ctx context.Context, item *session.Session) error {
-	if s.cfg.AIDP.AK == "" {
-		return errors.New("missing AIDP_AK in .env")
+	if s.cfg.LLM.Provider == "" {
+		return errors.New("missing LLM_PROVIDER in .env")
+	}
+	if s.cfg.LLM.APIURL == "" {
+		return errors.New("missing LLM_API_URL in .env")
+	}
+	if s.cfg.LLM.APIKey == "" {
+		return errors.New("missing LLM_API_KEY in .env")
+	}
+	if s.cfg.LLM.Model == "" {
+		return errors.New("missing LLM_MODEL in .env")
 	}
 	exe := sandbox.NewExecutor(s.cfg.LarkCLIBin, item.Dir, 5*time.Minute)
 	bundle, err := collector.New(exe).Collect(ctx, item.Dir, time.Now())
@@ -415,13 +424,16 @@ func (s *Server) runAnalysis(ctx context.Context, item *session.Session) error {
 	}
 	catalog := persona.All()
 	prompt := collector.BuildAnalysisPrompt(bundle, catalog)
-	client := llm.NewAIDPClient(llm.Config{
-		URL:       s.cfg.AIDP.ModelHubURL,
-		AK:        s.cfg.AIDP.AK,
-		Model:     s.cfg.AIDP.Model,
-		MaxTokens: s.cfg.AIDP.MaxTokens,
-		Stream:    s.cfg.AIDP.Stream,
+	client, err := llm.NewClient(llm.Config{
+		Provider:  llm.Provider(s.cfg.LLM.Provider),
+		APIURL:    s.cfg.LLM.APIURL,
+		APIKey:    s.cfg.LLM.APIKey,
+		Model:     s.cfg.LLM.Model,
+		MaxTokens: s.cfg.LLM.MaxTokens,
 	}, http.DefaultClient)
+	if err != nil {
+		return err
+	}
 	output, err := client.GenerateWithValidation(ctx, prompt, func(content string) error {
 		_, parseErr := persona.ParseLLMResult(content)
 		return parseErr

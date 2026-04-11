@@ -1,11 +1,11 @@
 # Feishu Personality Agent
 
-Local web agent for collecting authorized Feishu data through `lark-cli` and generating a BSPI Top1 persona report with the configured AIDP ModelHub LLM endpoint.
+Local web agent for collecting authorized Feishu data through `lark-cli` and generating a BSPI Top1 persona report with the configured LLM chat endpoint.
 
 ## Quick Start
 
 1. Install `lark-cli` and make sure it is available on `PATH`.
-2. Fill in `.env` with `AIDP_AK`. `LARK_APP_ID` and `LARK_APP_SECRET` are optional; if blank and no reusable local profile exists, the web login flow first asks you to configure a Feishu app through `lark-cli config init --new`.
+2. Fill in `.env` with the unified `LLM_*` configuration. `LARK_APP_ID` and `LARK_APP_SECRET` are optional; if blank and no reusable local profile exists, the web login flow first asks you to configure a Feishu app through `lark-cli config init --new`.
 3. Run:
 
 ```bash
@@ -23,14 +23,29 @@ After the first successful login, the agent reuses the local `lark-cli` profile 
 `.env` is intentionally ignored by git. Fill in:
 
 ```dotenv
-AIDP_AK=xxx
-AIDP_MODELHUB_URL=https://aidp.bytedance.net/api/modelhub/online/v2/crawl
-AIDP_MODEL=gpt-5.4-2026-03-05
-AIDP_MAX_TOKENS=5000
+LLM_PROVIDER=modelhub
+LLM_API_URL=https://aidp.bytedance.net/api/modelhub/online/v2/crawl
+LLM_API_KEY=xxx
+LLM_MODEL=gpt-5.4-2026-03-05
+LLM_MAX_TOKENS=5000
 # Optional: preconfigure these to skip the app setup link.
 LARK_APP_ID=
 LARK_APP_SECRET=
 ```
+
+Kimi example:
+
+```dotenv
+LLM_PROVIDER=kimi
+LLM_API_URL=https://api.moonshot.cn/v1/chat/completions
+LLM_API_KEY=Bearer xxx
+LLM_MODEL=kimi-k2.5
+LLM_MAX_TOKENS=5000
+LARK_APP_ID=
+LARK_APP_SECRET=
+```
+
+`LLM_PROVIDER` is required and currently supports `modelhub` and `kimi`. The service does not try to infer the provider from `LLM_API_URL`, and it does not enforce a URL shape match, so custom gateways or compatible proxies are allowed as long as the selected provider adapter matches the upstream protocol.
 
 The service also reads these optional runtime environment variables:
 
@@ -62,7 +77,7 @@ Recommended TCE runtime settings:
 
 - startup script: `<deploy-path>/bootstrap.sh`
 - health check: `GET /healthz` on port `8787`
-- runtime env: provide `AIDP_AK` and any optional Feishu app credentials through TCE environment variables
+- runtime env: provide the required `LLM_*` variables and any optional Feishu app credentials through TCE environment variables
 
 `bootstrap.sh` keeps local development defaults untouched in Go code while making the deployed service TCE-friendly:
 

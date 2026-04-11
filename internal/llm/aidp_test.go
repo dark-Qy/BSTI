@@ -26,12 +26,16 @@ func TestAIDPClientParsesArrayTextContent(t *testing.T) {
 			Request:    r,
 		}, nil
 	})}
-	client := NewAIDPClient(Config{
-		URL:       "https://aidp.test/api/modelhub/online/v2/crawl",
-		AK:        "secret-ak",
+	client, err := NewClient(Config{
+		Provider:  ProviderModelHub,
+		APIURL:    "https://aidp.test/api/modelhub/online/v2/crawl",
+		APIKey:    "secret-ak",
 		Model:     "gpt-5.4-2026-03-05",
 		MaxTokens: 500,
 	}, httpClient)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	report, err := client.Generate(context.Background(), "analysis input")
 	if err != nil {
@@ -51,14 +55,18 @@ func TestAIDPClientMissingContentErrorIncludesSafeShapeOnly(t *testing.T) {
 			Request:    r,
 		}, nil
 	})}
-	client := NewAIDPClient(Config{
-		URL:       "https://aidp.test/api/modelhub/online/v2/crawl",
-		AK:        "secret-ak",
+	client, err := NewClient(Config{
+		Provider:  ProviderModelHub,
+		APIURL:    "https://aidp.test/api/modelhub/online/v2/crawl",
+		APIKey:    "secret-ak",
 		Model:     "gpt-5.4-2026-03-05",
 		MaxTokens: 500,
 	}, httpClient)
+	if err != nil {
+		t.Fatal(err)
+	}
 
-	_, err := client.Generate(context.Background(), "analysis input")
+	_, err = client.Generate(context.Background(), "analysis input")
 	if err == nil {
 		t.Fatal("expected missing content error")
 	}
@@ -94,13 +102,16 @@ func TestAIDPClientBuildsModelHubRequest(t *testing.T) {
 		}, nil
 	})}
 
-	client := NewAIDPClient(Config{
-		URL:       "https://aidp.test/api/modelhub/online/v2/crawl",
-		AK:        "ak-test",
+	client, err := NewClient(Config{
+		Provider:  ProviderModelHub,
+		APIURL:    "https://aidp.test/api/modelhub/online/v2/crawl",
+		APIKey:    "ak-test",
 		Model:     "gpt-5.4-2026-03-05",
 		MaxTokens: 500,
-		Stream:    false,
 	}, httpClient)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	report, err := client.Generate(context.Background(), "analysis input")
 	if err != nil {
@@ -139,12 +150,16 @@ func TestAIDPClientRetriesWhenLengthConsumesAllContent(t *testing.T) {
 		}, nil
 	})}
 
-	client := NewAIDPClient(Config{
-		URL:       "https://aidp.test/api/modelhub/online/v2/crawl",
-		AK:        "ak-test",
+	client, err := NewClient(Config{
+		Provider:  ProviderModelHub,
+		APIURL:    "https://aidp.test/api/modelhub/online/v2/crawl",
+		APIKey:    "ak-test",
 		Model:     "gpt-5.4-2026-03-05",
 		MaxTokens: 500,
 	}, httpClient)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	report, err := client.Generate(context.Background(), "analysis input")
 	if err != nil {
@@ -189,12 +204,16 @@ func TestAIDPClientRetriesOnceWhenValidatorRejectsOutput(t *testing.T) {
 		}, nil
 	})}
 
-	client := NewAIDPClient(Config{
-		URL:       "https://aidp.test/api/modelhub/online/v2/crawl",
-		AK:        "ak-test",
+	client, err := NewClient(Config{
+		Provider:  ProviderModelHub,
+		APIURL:    "https://aidp.test/api/modelhub/online/v2/crawl",
+		APIKey:    "ak-test",
 		Model:     "gpt-5.4-2026-03-05",
 		MaxTokens: 5000,
 	}, httpClient)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	report, err := client.GenerateWithValidation(context.Background(), "analysis input", func(content string) error {
 		if !strings.Contains(content, `"primary_persona":"PRISM"`) {
@@ -213,5 +232,84 @@ func TestAIDPClientRetriesOnceWhenValidatorRejectsOutput(t *testing.T) {
 	}
 	if !strings.Contains(prompts[1], "没有通过校验") {
 		t.Fatalf("retry prompt = %q", prompts[1])
+	}
+}
+
+func TestNewClientRejectsUnknownProvider(t *testing.T) {
+	_, err := NewClient(Config{
+		Provider:  Provider("custom"),
+		APIURL:    "https://example.com/api",
+		APIKey:    "test-key",
+		Model:     "test-model",
+		MaxTokens: 5000,
+	}, http.DefaultClient)
+	if err == nil {
+		t.Fatal("expected invalid provider error")
+	}
+	if err.Error() != `unsupported llm provider "custom"` {
+		t.Fatalf("error = %q", err.Error())
+	}
+}
+
+func TestKimiClientBuildsChatCompletionsRequest(t *testing.T) {
+	var gotAuth string
+	var gotBody map[string]any
+	httpClient := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		gotAuth = r.Header.Get("Authorization")
+		if r.Header.Get("Content-Type") != "application/json" {
+			t.Fatalf("content type = %q", r.Header.Get("Content-Type"))
+		}
+		if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
+			t.Fatal(err)
+		}
+		return &http.Response{
+			StatusCode: 200,
+			Header:     make(http.Header),
+			Body:       io.NopCloser(bytes.NewBufferString(`{"choices":[{"message":{"content":"report text"}}]}`)),
+			Request:    r,
+		}, nil
+	})}
+
+	client, err := NewClient(Config{
+		Provider:  ProviderKimi,
+		APIURL:    "https://api.moonshot.cn/v1/chat/completions",
+		APIKey:    "Bearer test-key",
+		Model:     "kimi-k2.5",
+		MaxTokens: 7000,
+	}, httpClient)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	report, err := client.Generate(context.Background(), "analysis input")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report != "report text" {
+		t.Fatalf("report = %q", report)
+	}
+	if gotAuth != "Bearer test-key" {
+		t.Fatalf("authorization = %q", gotAuth)
+	}
+	if gotBody["model"] != "kimi-k2.5" {
+		t.Fatalf("model body = %#v", gotBody)
+	}
+	if gotBody["max_completion_tokens"] != float64(7000) {
+		t.Fatalf("max_completion_tokens = %#v", gotBody["max_completion_tokens"])
+	}
+	thinking, ok := gotBody["thinking"].(map[string]any)
+	if !ok || thinking["type"] != "disabled" {
+		t.Fatalf("thinking body = %#v", gotBody["thinking"])
+	}
+	messages, ok := gotBody["messages"].([]any)
+	if !ok || len(messages) != 1 {
+		t.Fatalf("messages body = %#v", gotBody["messages"])
+	}
+	message, ok := messages[0].(map[string]any)
+	if !ok {
+		t.Fatalf("message body = %#v", messages[0])
+	}
+	if message["content"] != "analysis input" {
+		t.Fatalf("content body = %#v", message["content"])
 	}
 }

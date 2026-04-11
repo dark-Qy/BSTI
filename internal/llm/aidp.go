@@ -12,36 +12,79 @@ import (
 	"strings"
 )
 
+type Provider string
+
+const (
+	ProviderModelHub Provider = "modelhub"
+	ProviderKimi     Provider = "kimi"
+)
+
 type Config struct {
-	URL       string
-	AK        string
+	Provider  Provider
+	APIURL    string
+	APIKey    string
 	Model     string
 	MaxTokens int
-	Stream    bool
 }
 
-type AIDPClient struct {
+type Client interface {
+	Generate(ctx context.Context, prompt string) (string, error)
+	GenerateWithValidation(ctx context.Context, prompt string, validate func(string) error) (string, error)
+}
+
+type adapter interface {
+	name() string
+	buildRequestBody(cfg Config, prompt string, maxTokens int) (map[string]any, error)
+	prepareRequest(req *http.Request, cfg Config) error
+	shouldRetryEmptyLength(raw map[string]json.RawMessage) bool
+}
+
+type chatClient struct {
 	cfg        Config
+	adapter    adapter
 	httpClient *http.Client
 }
 
-func NewAIDPClient(cfg Config, httpClient *http.Client) *AIDPClient {
+func NewClient(cfg Config, httpClient *http.Client) (Client, error) {
+	if cfg.Provider == "" {
+		return nil, fmt.Errorf("missing llm provider")
+	}
+	if cfg.APIURL == "" {
+		return nil, fmt.Errorf("missing llm api url")
+	}
+	if cfg.APIKey == "" {
+		return nil, fmt.Errorf("missing llm api key")
+	}
+	if cfg.Model == "" {
+		return nil, fmt.Errorf("missing llm model")
+	}
+	switch cfg.Provider {
+	case ProviderModelHub:
+		return newChatClient(cfg, httpClient, modelHubAdapter{}), nil
+	case ProviderKimi:
+		return newChatClient(cfg, httpClient, kimiAdapter{}), nil
+	default:
+		return nil, fmt.Errorf("unsupported llm provider %q", cfg.Provider)
+	}
+}
+
+func newChatClient(cfg Config, httpClient *http.Client, adapter adapter) *chatClient {
 	if httpClient == nil {
 		httpClient = http.DefaultClient
 	}
-	return &AIDPClient{cfg: cfg, httpClient: httpClient}
+	return &chatClient{cfg: cfg, adapter: adapter, httpClient: httpClient}
 }
 
-func (c *AIDPClient) Generate(ctx context.Context, prompt string) (string, error) {
+func (c *chatClient) Generate(ctx context.Context, prompt string) (string, error) {
 	return c.GenerateWithValidation(ctx, prompt, nil)
 }
 
-func (c *AIDPClient) GenerateWithValidation(ctx context.Context, prompt string, validate func(string) error) (string, error) {
+func (c *chatClient) GenerateWithValidation(ctx context.Context, prompt string, validate func(string) error) (string, error) {
 	maxTokens := startingMaxTokens(c.cfg.MaxTokens)
 	requestPrompt := prompt
 	validationAttempts := 0
 	for {
-		body, err := c.buildRequestBody(requestPrompt, maxTokens)
+		body, err := c.adapter.buildRequestBody(c.cfg, requestPrompt, maxTokens)
 		if err != nil {
 			return "", err
 		}
@@ -61,29 +104,65 @@ func (c *AIDPClient) GenerateWithValidation(ctx context.Context, prompt string, 
 				requestPrompt = prompt + "\n\n你上一次的输出没有通过校验，原因是：" + err.Error() + "。请重新输出一次，只输出合法 JSON。"
 				continue
 			} else {
-				return "", fmt.Errorf("AIDP response validation failed: %w", err)
+				return "", fmt.Errorf("%s response validation failed: %w", c.adapter.name(), err)
 			}
 		}
-		if !shouldRetryEmptyLength(raw) {
-			return "", fmt.Errorf("AIDP response did not include report content (shape: %s)", aidpResponseShape(raw))
+		if !c.adapter.shouldRetryEmptyLength(raw) {
+			return "", fmt.Errorf("%s response did not include report content (shape: %s)", c.adapter.name(), responseShape(raw))
 		}
 		next := retryMaxTokens(maxTokens)
 		if next <= maxTokens {
-			return "", fmt.Errorf("AIDP response did not include report content (shape: %s)", aidpResponseShape(raw))
+			return "", fmt.Errorf("%s response did not include report content (shape: %s)", c.adapter.name(), responseShape(raw))
 		}
 		maxTokens = next
 	}
 }
 
-func (c *AIDPClient) buildRequestBody(prompt string, maxTokens int) (map[string]any, error) {
-	endpoint, err := url.Parse(c.cfg.URL)
+func (c *chatClient) doRequest(ctx context.Context, body map[string]any) (map[string]json.RawMessage, error) {
+	endpoint, err := url.Parse(c.cfg.APIURL)
 	if err != nil {
-		return nil, fmt.Errorf("invalid AIDP URL")
+		return nil, fmt.Errorf("invalid %s URL", c.adapter.name())
 	}
-	_ = endpoint
+
+	payload, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint.String(), bytes.NewReader(payload))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if err := c.adapter.prepareRequest(req, c.cfg); err != nil {
+		return nil, err
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("%s request failed: %w", c.adapter.name(), err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("%s request failed with status %d", c.adapter.name(), resp.StatusCode)
+	}
+
+	var raw map[string]json.RawMessage
+	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
+		return nil, err
+	}
+	return raw, nil
+}
+
+type modelHubAdapter struct{}
+
+func (modelHubAdapter) name() string {
+	return "modelhub"
+}
+
+func (modelHubAdapter) buildRequestBody(cfg Config, prompt string, maxTokens int) (map[string]any, error) {
 	return map[string]any{
-		"stream":     c.cfg.Stream,
-		"model":      c.cfg.Model,
+		"stream":     false,
+		"model":      cfg.Model,
 		"max_tokens": maxTokens,
 		"messages": []map[string]any{
 			{
@@ -96,38 +175,46 @@ func (c *AIDPClient) buildRequestBody(prompt string, maxTokens int) (map[string]
 	}, nil
 }
 
-func (c *AIDPClient) doRequest(ctx context.Context, body map[string]any) (map[string]json.RawMessage, error) {
-	endpoint, err := url.Parse(c.cfg.URL)
-	if err != nil {
-		return nil, fmt.Errorf("invalid AIDP URL")
-	}
-	query := endpoint.Query()
-	query.Set("ak", c.cfg.AK)
-	endpoint.RawQuery = query.Encode()
+func (modelHubAdapter) prepareRequest(req *http.Request, cfg Config) error {
+	query := req.URL.Query()
+	query.Set("ak", cfg.APIKey)
+	req.URL.RawQuery = query.Encode()
+	return nil
+}
 
-	payload, err := json.Marshal(body)
-	if err != nil {
-		return nil, err
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint.String(), bytes.NewReader(payload))
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("AIDP request failed: %w", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("AIDP request failed with status %d", resp.StatusCode)
-	}
+func (modelHubAdapter) shouldRetryEmptyLength(raw map[string]json.RawMessage) bool {
+	return shouldRetryEmptyLength(raw)
+}
 
-	var raw map[string]json.RawMessage
-	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
-		return nil, err
-	}
-	return raw, nil
+type kimiAdapter struct{}
+
+func (kimiAdapter) name() string {
+	return "kimi"
+}
+
+func (kimiAdapter) buildRequestBody(cfg Config, prompt string, maxTokens int) (map[string]any, error) {
+	return map[string]any{
+		"model":                 cfg.Model,
+		"max_completion_tokens": maxTokens,
+		"thinking": map[string]string{
+			"type": "disabled",
+		},
+		"messages": []map[string]any{
+			{
+				"role":    "user",
+				"content": prompt,
+			},
+		},
+	}, nil
+}
+
+func (kimiAdapter) prepareRequest(req *http.Request, cfg Config) error {
+	req.Header.Set("Authorization", cfg.APIKey)
+	return nil
+}
+
+func (kimiAdapter) shouldRetryEmptyLength(raw map[string]json.RawMessage) bool {
+	return false
 }
 
 type aidpChoice struct {
@@ -175,7 +262,7 @@ func extractReportContent(raw map[string]json.RawMessage) (string, bool) {
 	return b.String(), true
 }
 
-func aidpResponseShape(raw map[string]json.RawMessage) string {
+func responseShape(raw map[string]json.RawMessage) string {
 	keys := make([]string, 0, len(raw))
 	for key := range raw {
 		keys = append(keys, key)
