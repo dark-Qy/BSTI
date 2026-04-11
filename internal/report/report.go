@@ -1,6 +1,7 @@
 package report
 
 import (
+	"fmt"
 	"html"
 	"os"
 	"path/filepath"
@@ -58,7 +59,7 @@ func renderMarkdown(result persona.Result) string {
 	b.WriteString("## 风险与盲区\n")
 	b.WriteString(result.Analysis.BlindSpots + "\n\n")
 	b.WriteString("## 置信度\n")
-	b.WriteString(result.Analysis.Confidence + "\n\n")
+	b.WriteString(fmt.Sprintf("%.2f", result.Analysis.Confidence) + "\n\n")
 	b.WriteString("## 免责声明\n")
 	b.WriteString(result.Analysis.Disclaimer + "\n")
 	return b.String()
@@ -84,7 +85,7 @@ func renderHTML(result persona.Result) string {
 	b.WriteString("<ul class=\"meta\">")
 	b.WriteString("<li><strong>字节范儿维度：</strong>" + html.EscapeString(result.PrimaryPersona.ByteStyleDimension) + "</li>")
 	b.WriteString("<li><strong>分析维度：</strong>" + html.EscapeString(result.PrimaryPersona.AnalysisDimension) + "</li>")
-	b.WriteString("<li><strong>置信度：</strong>" + html.EscapeString(result.Analysis.Confidence) + "</li>")
+	b.WriteString("<li><strong>置信度：</strong>" + fmt.Sprintf("%.2f", result.Analysis.Confidence) + "</li>")
 	b.WriteString("</ul>")
 	b.WriteString("</div></div>")
 	b.WriteString("<div class=\"section\"><h2>官方人格定义</h2><p>" + html.EscapeString(result.PrimaryPersona.CanonicalDescription) + "</p></div>")

@@ -44,6 +44,66 @@ func TestCollectWritesPrivateRawLogsForCoreDomains(t *testing.T) {
 	}
 }
 
+type scriptedRunner struct {
+	calls [][]string
+}
+
+func (s *scriptedRunner) Run(ctx context.Context, args []string) (sandbox.Output, error) {
+	s.calls = append(s.calls, append([]string(nil), args...))
+	switch {
+	case len(args) >= 2 && args[0] == "docs" && args[1] == "+search":
+		return sandbox.Output{Stdout: `{"items":[{"url":"https://example.feishu.cn/docx/alpha"},{"url":"https://example.feishu.cn/docx/beta"}]}`}, nil
+	case len(args) >= 2 && args[0] == "docs" && args[1] == "+fetch":
+		return sandbox.Output{Stdout: `{"content":"doc body"}`}, nil
+	case len(args) >= 2 && args[0] == "vc" && args[1] == "+search":
+		return sandbox.Output{Stdout: `{"items":[{"calendar_event_id":"evt-1"},{"calendar_event_id":"evt-2"}]}`}, nil
+	case len(args) >= 2 && args[0] == "vc" && args[1] == "+notes":
+		return sandbox.Output{Stdout: `{"notes":"meeting notes"}`}, nil
+	case len(args) >= 2 && args[0] == "mail" && args[1] == "+triage":
+		return sandbox.Output{Stdout: `{"items":[{"message_id":"mid-1"},{"message_id":"mid-2"}]}`}, nil
+	case len(args) >= 2 && args[0] == "mail" && args[1] == "+message":
+		return sandbox.Output{Stdout: `{"body":"mail body"}`}, nil
+	default:
+		return sandbox.Output{Stdout: `{"ok":true}`}, nil
+	}
+}
+
+func TestCollectFetchesDocBodiesMeetingNotesAndMailBodies(t *testing.T) {
+	dir := t.TempDir()
+	runner := &scriptedRunner{}
+	c := New(runner)
+
+	bundle, err := c.Collect(context.Background(), dir, time.Date(2026, 4, 10, 12, 0, 0, 0, time.FixedZone("CST", 8*3600)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(bundle.Domains) != 11 {
+		t.Fatalf("domains = %d", len(bundle.Domains))
+	}
+
+	var sawDocFetch, sawVCNotes, sawMailMessage bool
+	for _, call := range runner.calls {
+		if len(call) >= 2 && call[0] == "docs" && call[1] == "+fetch" {
+			sawDocFetch = true
+		}
+		if len(call) >= 2 && call[0] == "vc" && call[1] == "+notes" {
+			sawVCNotes = true
+		}
+		if len(call) >= 2 && call[0] == "mail" && call[1] == "+message" {
+			sawMailMessage = true
+		}
+	}
+	if !sawDocFetch {
+		t.Fatal("expected docs +fetch")
+	}
+	if !sawVCNotes {
+		t.Fatal("expected vc +notes")
+	}
+	if !sawMailMessage {
+		t.Fatal("expected mail +message")
+	}
+}
+
 func TestCollectOmitsEmptyChatQueryArgument(t *testing.T) {
 	dir := t.TempDir()
 	runner := &fakeRunner{}
@@ -77,7 +137,22 @@ func TestBuildAnalysisPromptPreservesOriginalData(t *testing.T) {
 	}}
 
 	prompt := BuildAnalysisPrompt(bundle, persona.All())
-	for _, want := range []string{"不要展示思考过程", "只输出合法 JSON", "primary_persona", "## BSPI Catalog", "## Authorized Data", "PRISM", "变色龙"} {
+	for _, want := range []string{
+		"不要展示思考过程",
+		"只输出合法 JSON",
+		"primary_persona",
+		"## BSPI Catalog",
+		"## Authorized Data",
+		"PRISM",
+		"变色龙",
+		"summary 需要写成一段信息密度高的中文总结",
+		"evidence 至少提供 4 条",
+		"优先引用跨域一致信号",
+		"如果证据不足",
+		"不要编造没有出现在授权数据中的事实",
+		"避免使用带评判色彩或过度拟人化的措辞",
+		"confidence 必须是 0 到 1 之间的数字",
+	} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("prompt missing instruction %q", want)
 		}

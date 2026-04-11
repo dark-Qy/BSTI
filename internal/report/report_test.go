@@ -26,7 +26,7 @@ func TestWriteLocalReportWritesStructuredMarkdownAndHTML(t *testing.T) {
 			CommunicationStyle: "先理解对方语境，再翻译回共同问题。",
 			WorkPreferences:    "偏好多方协作与需要桥接认知差异的任务。",
 			BlindSpots:         "可能长期适配别人而忽略自己的固定表达方式。",
-			Confidence:         "高",
+			Confidence:         0.86,
 			Disclaimer:         "仅基于授权数据的行为风格观察。",
 		},
 	}
@@ -52,5 +52,11 @@ func TestWriteLocalReportWritesStructuredMarkdownAndHTML(t *testing.T) {
 	md := string(mdBytes)
 	if !strings.Contains(md, "## Primary Persona") || !strings.Contains(md, "PRISM") {
 		t.Fatalf("markdown = %s", md)
+	}
+	if !strings.Contains(md, "## 置信度\n0.86") {
+		t.Fatalf("markdown confidence = %s", md)
+	}
+	if !strings.Contains(html, "置信度：</strong>0.86") {
+		t.Fatalf("html confidence = %s", html)
 	}
 }
