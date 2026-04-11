@@ -9,7 +9,10 @@ TARGET_OS="${GOOS:-linux}"
 TARGET_ARCH="${GOARCH:-amd64}"
 
 rm -rf "${OUTPUT_DIR}"
-mkdir -p "${OUTPUT_DIR}/data"
+mkdir -p "${OUTPUT_DIR}/data" "${OUTPUT_DIR}/web"
+
+NPM_CONFIG_CACHE="${ROOT_DIR}/.npm-cache" npm --prefix "${ROOT_DIR}/web" ci
+NPM_CONFIG_CACHE="${ROOT_DIR}/.npm-cache" npm --prefix "${ROOT_DIR}/web" run build
 
 GOCACHE="${ROOT_DIR}/.gocache" \
 GOOS="${TARGET_OS}" \
@@ -19,4 +22,5 @@ go build -o "${OUTPUT_DIR}/${BINARY_NAME}" ./cmd/agent
 
 cp "${ROOT_DIR}/bootstrap.sh" "${OUTPUT_DIR}/bootstrap.sh"
 cp -R "${ROOT_DIR}/photos" "${OUTPUT_DIR}/photos"
+cp -R "${ROOT_DIR}/web/dist" "${OUTPUT_DIR}/web/dist"
 chmod +x "${OUTPUT_DIR}/${BINARY_NAME}" "${OUTPUT_DIR}/bootstrap.sh"

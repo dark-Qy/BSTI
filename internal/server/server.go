@@ -61,6 +61,7 @@ func New(cfg ServerConfig) *Server {
 	}
 	r := gin.New()
 	r.Use(gin.Recovery())
+	r.StaticFS("/app-assets", gin.Dir(frontendAssetsDir(), false))
 	r.StaticFS("/assets/photos", gin.Dir("photos", false))
 	r.GET("/healthz", s.healthz)
 	r.GET("/", s.index)
@@ -69,6 +70,7 @@ func New(cfg ServerConfig) *Server {
 	r.GET("/api/sessions/:id/status", s.status)
 	r.POST("/api/sessions/:id/analyze", s.analyze)
 	r.GET("/api/sessions/:id/report", s.report)
+	r.GET("/api/sessions/:id/report-data", s.reportData)
 	s.router = r
 	return s
 }
@@ -82,6 +84,9 @@ func (s *Server) healthz(c *gin.Context) {
 }
 
 func (s *Server) index(c *gin.Context) {
+	if serveFrontendIndex(c) {
+		return
+	}
 	c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(indexHTML))
 }
 
@@ -102,7 +107,7 @@ func (s *Server) login(c *gin.Context) {
 	}
 	url, err := s.loginStarter(c.Request.Context(), item)
 	if err != nil {
-		item.Status = session.StatusFailed
+		recordStatus(item, session.StatusFailed, "启动登录流程失败")
 		item.Error = err.Error()
 		_ = s.store.Save(item)
 		writeError(c, http.StatusInternalServerError, err)
@@ -124,6 +129,9 @@ func (s *Server) status(c *gin.Context) {
 		"error":            item.Error,
 		"report_ready":     item.ReportHTML != "",
 		"primary_persona":  primaryPersonaSummary(item),
+		"progress":         progressForStatus(item.Status),
+		"events":           item.Events,
+		"next_action":      nextActionForStatus(item.Status),
 	})
 }
 
@@ -137,7 +145,7 @@ func (s *Server) analyze(c *gin.Context) {
 		c.JSON(http.StatusConflict, gin.H{"error": "session is not authenticated", "status": item.Status})
 		return
 	}
-	item.Status = session.StatusCollecting
+	recordStatus(item, session.StatusCollecting, "正在采集授权范围内的飞书数据")
 	item.Error = ""
 	item.PersonaResult = nil
 	if err := s.store.Save(item); err != nil {
@@ -146,7 +154,7 @@ func (s *Server) analyze(c *gin.Context) {
 	}
 	go func() {
 		if err := s.analyzer(context.Background(), item); err != nil {
-			item.Status = session.StatusFailed
+			recordStatus(item, session.StatusFailed, "分析流程执行失败")
 			item.Error = err.Error()
 			_ = s.store.Save(item)
 		}
@@ -165,6 +173,26 @@ func (s *Server) report(c *gin.Context) {
 		return
 	}
 	c.File(item.ReportHTML)
+}
+
+func (s *Server) reportData(c *gin.Context) {
+	item, err := s.store.Get(c.Param("id"))
+	if err != nil {
+		writeError(c, http.StatusNotFound, err)
+		return
+	}
+	if item.Status != session.StatusDone || item.PersonaResult == nil {
+		c.JSON(http.StatusConflict, gin.H{
+			"status": item.Status,
+			"error":  "report is not ready",
+		})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"status": item.Status,
+		"error":  item.Error,
+		"report": normalizeReportResult(*item.PersonaResult),
+	})
 }
 
 func (s *Server) startLogin(ctx context.Context, item *session.Session) (string, error) {
@@ -263,7 +291,7 @@ func (s *Server) tryReuseLogin(ctx context.Context, item *session.Session) (bool
 	if status.Identity != "user" || (status.TokenStatus != "valid" && status.TokenStatus != "needs_refresh") {
 		return false, nil
 	}
-	item.Status = session.StatusAuthenticated
+	recordStatus(item, session.StatusAuthenticated, "发现可复用的飞书登录态")
 	item.VerificationURL = ""
 	item.DeviceCode = ""
 	item.Error = ""
@@ -307,7 +335,7 @@ func (s *Server) startConfigThenLogin(ctx context.Context, item *session.Session
 
 	select {
 	case configURL := <-urlCh:
-		item.Status = session.StatusConfigPending
+		recordStatus(item, session.StatusConfigPending, "等待完成飞书应用配置")
 		item.VerificationURL = configURL
 		if err := s.store.Save(item); err != nil {
 			cancel()
@@ -335,7 +363,7 @@ func (s *Server) waitConfigThenStartOAuth(cmd *exec.Cmd, cancel context.CancelFu
 	if err := cmd.Wait(); err != nil {
 		current, loadErr := s.store.Get(sessionID)
 		if loadErr == nil {
-			current.Status = session.StatusFailed
+			recordStatus(current, session.StatusFailed, "飞书应用配置失败")
 			current.Error = err.Error()
 			_ = s.store.Save(current)
 		}
@@ -346,13 +374,13 @@ func (s *Server) waitConfigThenStartOAuth(cmd *exec.Cmd, cancel context.CancelFu
 		return
 	}
 	if err := s.persistSessionCLIConfig(current); err != nil {
-		current.Status = session.StatusFailed
+		recordStatus(current, session.StatusFailed, "保存飞书配置失败")
 		current.Error = err.Error()
 		_ = s.store.Save(current)
 		return
 	}
 	if _, err := s.startOAuthLogin(context.Background(), current); err != nil {
-		current.Status = session.StatusFailed
+		recordStatus(current, session.StatusFailed, "启动飞书授权失败")
 		current.Error = err.Error()
 		_ = s.store.Save(current)
 	}
@@ -371,7 +399,7 @@ func (s *Server) startOAuthLogin(ctx context.Context, item *session.Session) (st
 	if err := json.Unmarshal([]byte(out.Stdout), &resp); err != nil {
 		return "", err
 	}
-	item.Status = session.StatusLoginPending
+	recordStatus(item, session.StatusLoginPending, "等待完成飞书授权")
 	item.VerificationURL = resp.VerificationURL
 	item.DeviceCode = resp.DeviceCode
 	if err := s.store.Save(item); err != nil {
@@ -384,14 +412,14 @@ func (s *Server) startOAuthLogin(ctx context.Context, item *session.Session) (st
 			return
 		}
 		if pollErr != nil {
-			current.Status = session.StatusFailed
+			recordStatus(current, session.StatusFailed, "飞书授权失败")
 			current.Error = pollErr.Error()
 			_ = pollOut
 		} else {
-			current.Status = session.StatusAuthenticated
+			recordStatus(current, session.StatusAuthenticated, "飞书授权完成")
 			current.Error = ""
 			if err := s.persistSessionCLIConfig(current); err != nil {
-				current.Status = session.StatusFailed
+				recordStatus(current, session.StatusFailed, "保存飞书登录态失败")
 				current.Error = err.Error()
 			}
 		}
@@ -418,7 +446,7 @@ func (s *Server) runAnalysis(ctx context.Context, item *session.Session) error {
 	if err != nil {
 		return err
 	}
-	item.Status = session.StatusAnalyzing
+	recordStatus(item, session.StatusAnalyzing, "正在调用 AIDP 生成结构化 BSPI 报告")
 	if err := s.store.Save(item); err != nil {
 		return err
 	}
@@ -445,6 +473,7 @@ func (s *Server) runAnalysis(ctx context.Context, item *session.Session) error {
 	if err != nil {
 		return err
 	}
+	result.Coverage = collector.Coverage(bundle)
 	paths, err := report.WriteLocal(item.Dir, result)
 	if err != nil {
 		return err
@@ -452,7 +481,7 @@ func (s *Server) runAnalysis(ctx context.Context, item *session.Session) error {
 	item.PersonaResult = &result
 	item.ReportMarkdown = paths.Markdown
 	item.ReportHTML = paths.HTML
-	item.Status = session.StatusDone
+	recordStatus(item, session.StatusDone, "报告已生成，可以查看结果")
 	return s.store.Save(item)
 }
 
@@ -495,6 +524,34 @@ func primaryPersonaSummary(item *session.Session) any {
 		return nil
 	}
 	return item.PersonaResult.PrimaryPersona
+}
+
+func normalizeReportResult(result persona.Result) persona.Result {
+	if result.HighlightTags == nil {
+		result.HighlightTags = []string{}
+	}
+	if result.BehaviorVectors == nil {
+		result.BehaviorVectors = []persona.BehaviorVector{}
+	}
+	if result.Coverage.SuccessfulDomains == nil {
+		result.Coverage.SuccessfulDomains = []string{}
+	}
+	if result.Coverage.FailedDomains == nil {
+		result.Coverage.FailedDomains = []string{}
+	}
+	if result.ShareCard.Title == "" {
+		result.ShareCard.Title = result.PrimaryPersona.ChineseLabel + " / " + result.PrimaryPersona.Shorthand
+	}
+	if result.ShareCard.Subtitle == "" {
+		result.ShareCard.Subtitle = result.PrimaryPersona.OneLiner
+	}
+	if result.ShareCard.ImageURL == "" {
+		result.ShareCard.ImageURL = result.PrimaryPersona.ImageURL
+	}
+	if result.ShareCard.DisclaimerShort == "" {
+		result.ShareCard.DisclaimerShort = result.Analysis.Disclaimer
+	}
+	return result
 }
 
 var indexHTML = `<!doctype html>

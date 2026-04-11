@@ -127,6 +127,145 @@ func TestStatusIncludesPrimaryPersonaSummaryWhenReportIsReady(t *testing.T) {
 	}
 }
 
+func TestStatusIncludesProgressEventsAndNextAction(t *testing.T) {
+	store := session.NewFileStore(t.TempDir())
+	srv := New(ServerConfig{
+		App:   config.Config{},
+		Store: store,
+	})
+
+	item, err := store.Create()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/sessions/"+item.ID+"/status", nil)
+	w := httptest.NewRecorder()
+	srv.Router().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status code = %d body=%s", w.Code, w.Body.String())
+	}
+
+	var resp struct {
+		Progress struct {
+			Stage   string `json:"stage"`
+			Label   string `json:"label"`
+			Percent int    `json:"percent"`
+		} `json:"progress"`
+		Events []struct {
+			Stage string `json:"stage"`
+		} `json:"events"`
+		NextAction string `json:"next_action"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	if resp.Progress.Stage != string(session.StatusCreated) || resp.Progress.Percent == 0 {
+		t.Fatalf("progress = %#v", resp.Progress)
+	}
+	if len(resp.Events) == 0 || resp.Events[0].Stage != string(session.StatusCreated) {
+		t.Fatalf("events = %#v", resp.Events)
+	}
+	if resp.NextAction != "connect_feishu" {
+		t.Fatalf("next_action = %q", resp.NextAction)
+	}
+}
+
+func TestReportDataReturnsStructuredReport(t *testing.T) {
+	store := session.NewFileStore(t.TempDir())
+	srv := New(ServerConfig{
+		App:   config.Config{},
+		Store: store,
+	})
+
+	item, err := store.Create()
+	if err != nil {
+		t.Fatal(err)
+	}
+	item.Status = session.StatusDone
+	item.ReportHTML = filepath.Join(item.Dir, "report.html")
+	item.PersonaResult = &persona.Result{
+		PrimaryPersona: persona.Primary{
+			Shorthand:            "PRISM",
+			ChineseLabel:         "变色龙",
+			ImageURL:             "/assets/photos/PRISM.png",
+			ByteStyleDimension:   "多元兼容",
+			AnalysisDimension:    "多元文化适应力",
+			OneLiner:             "多线程文化模拟器，每个频道都是真的",
+			CanonicalDescription: "PRISM 擅长跨文化切换与桥接。",
+		},
+		Analysis: persona.Analysis{
+			Summary:            "跨文化语境切换自然，适合做协作桥梁。",
+			Evidence:           []string{"频繁在不同协作对象之间切换表达方式", "跨团队沟通密度高"},
+			CommunicationStyle: "先理解对方语境，再翻译回共同问题。",
+			WorkPreferences:    "偏好多方协作与需要桥接认知差异的任务。",
+			BlindSpots:         "可能长期适配别人而忽略自己的固定表达方式。",
+			Confidence:         0.86,
+			Disclaimer:         "仅基于授权数据的行为风格观察。",
+		},
+		HighlightTags: []string{"跨团队桥接", "语境切换", "协作雷达"},
+		BehaviorVectors: []persona.BehaviorVector{
+			{Label: "协作方式", LeftPole: "独立成局", RightPole: "高频协同", Score: 82, Summary: "多人协同场景更强。"},
+			{Label: "表达风格", LeftPole: "克制压缩", RightPole: "高频输出", Score: 71, Summary: "输出密度较高。"},
+			{Label: "决策路径", LeftPole: "证据校准", RightPole: "直觉快判", Score: 44, Summary: "先校准事实再下判断。"},
+			{Label: "推进节奏", LeftPole: "稳态推进", RightPole: "高压突进", Score: 58, Summary: "稳中偏快。"},
+		},
+		Coverage: persona.Coverage{
+			SuccessfulDomains: []string{"chat", "docs", "calendar"},
+			FailedDomains:     []string{"mail"},
+			Summary:           "已覆盖 3 个数据域，1 个数据域因权限受限未纳入。",
+		},
+	}
+	if err := store.Save(item); err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/sessions/"+item.ID+"/report-data", nil)
+	w := httptest.NewRecorder()
+	srv.Router().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("report-data code = %d body=%s", w.Code, w.Body.String())
+	}
+
+	var resp struct {
+		Status string         `json:"status"`
+		Error  string         `json:"error"`
+		Report persona.Result `json:"report"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	if resp.Status != string(session.StatusDone) {
+		t.Fatalf("status = %q", resp.Status)
+	}
+	if len(resp.Report.BehaviorVectors) != 4 {
+		t.Fatalf("report = %#v", resp.Report)
+	}
+	if resp.Report.Coverage.Summary == "" {
+		t.Fatalf("coverage = %#v", resp.Report.Coverage)
+	}
+}
+
+func TestReportDataReturnsConflictWhenReportIsNotReady(t *testing.T) {
+	store := session.NewFileStore(t.TempDir())
+	srv := New(ServerConfig{
+		App:   config.Config{},
+		Store: store,
+	})
+
+	item, err := store.Create()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/sessions/"+item.ID+"/report-data", nil)
+	w := httptest.NewRecorder()
+	srv.Router().ServeHTTP(w, req)
+	if w.Code != http.StatusConflict {
+		t.Fatalf("report-data code = %d body=%s", w.Code, w.Body.String())
+	}
+}
+
 func TestServerAutoConfiguresAppWhenCredentialsAreMissing(t *testing.T) {
 	store := session.NewFileStore(t.TempDir())
 	srv := New(ServerConfig{
@@ -167,7 +306,7 @@ func TestServerAutoConfiguresAppWhenCredentialsAreMissing(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if loaded.VerificationURL == "https://auth.example/verify" && (loaded.Status == session.StatusLoginPending || loaded.Status == session.StatusAuthenticated) {
+		if loaded.VerificationURL == "https://auth.example/verify" && loaded.Status == session.StatusAuthenticated {
 			return
 		}
 		time.Sleep(10 * time.Millisecond)

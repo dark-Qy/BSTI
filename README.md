@@ -2,17 +2,32 @@
 
 Local web agent for collecting authorized Feishu data through `lark-cli` and generating a BSPI Top1 persona report with the configured LLM chat endpoint.
 
+The current UI is a React/Vite single-page app served by the Go HTTP service. It guides users through three stages:
+
+- Landing & Auth
+- Analysis & Loading
+- Result & Persona Report
+
 ## Quick Start
 
 1. Install `lark-cli` and make sure it is available on `PATH`.
 2. Fill in `.env` with the unified `LLM_*` configuration. `LARK_APP_ID` and `LARK_APP_SECRET` are optional; if blank and no reusable local profile exists, the web login flow first asks you to configure a Feishu app through `lark-cli config init --new`.
-3. Run:
+3. Install and build the frontend once:
+
+```bash
+cd web
+npm install
+npm run build
+cd ..
+```
+
+4. Run:
 
 ```bash
 go run ./cmd/agent
 ```
 
-4. Open `http://127.0.0.1:8787`.
+5. Open `http://127.0.0.1:8787`.
 
 The report is not a psychological diagnosis. It is a behavior-style summary based only on the data the user explicitly authorized.
 
@@ -57,11 +72,12 @@ HTTP_ADDR=127.0.0.1:8787
 
 ## BOE Deployment
 
-Use `build.sh` as the SCM compile script. It builds a Linux binary, copies `photos/`, and assembles a deployment-ready `output/` directory with:
+Use `build.sh` as the SCM compile script. It installs frontend dependencies, builds the React/Vite app, builds a Linux binary, copies `photos/`, and assembles a deployment-ready `output/` directory with:
 
 - `agent`
 - `bootstrap.sh`
 - `photos/`
+- `web/dist/`
 - `data/`
 
 Recommended SCM settings:
@@ -92,7 +108,21 @@ The packaged service still expects `lark-cli` to be available in the runtime ima
 - `GET /healthz` returns `200` with `{"status":"ok"}` for liveness and readiness checks.
 - `POST /api/sessions` creates a local session.
 - `POST /api/sessions/{id}/login` returns the current Feishu link when authorization is needed. If an existing local token is valid or refreshable, the session becomes authenticated without returning a new link.
-- `GET /api/sessions/{id}/status` returns session state and, once ready, the Top1 BSPI persona summary used by the home page card.
+- `GET /api/sessions/{id}/status` returns session state, progress metadata, an event timeline, the next recommended action, and, once ready, the Top1 BSPI persona summary used by the home page card.
 - `POST /api/sessions/{id}/analyze` starts read-only collection and report generation.
-- `GET /api/sessions/{id}/report` returns the local HTML result page with the persona image, official persona definition, and LLM-generated analysis.
+- `GET /api/sessions/{id}/report` returns the compatibility HTML result page with the persona image, official persona definition, and LLM-generated analysis.
+- `GET /api/sessions/{id}/report-data` returns the structured JSON report consumed by the React frontend. It includes:
+  - `primary_persona`
+  - `analysis`
+  - `highlight_tags`
+  - `behavior_vectors`
+  - `share_card`
+  - `coverage`
 - `GET /assets/photos/{SHORTHAND}.png` serves the local persona art used by the home page and report page.
+
+`behavior_vectors` is a fixed 4-item array of work-style signals:
+
+- `协作方式`: `独立成局` ↔ `高频协同`
+- `表达风格`: `克制压缩` ↔ `高频输出`
+- `决策路径`: `证据校准` ↔ `直觉快判`
+- `推进节奏`: `稳态推进` ↔ `高压突进`
