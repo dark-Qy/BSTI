@@ -8,18 +8,12 @@ import {
   getSessionStatus,
   startLogin,
 } from './api'
-import type { ReportData, SessionStatus, SessionStatusResponse } from './types'
-
-const statusOrder: SessionStatus[] = [
-  'created',
-  'config_pending',
-  'login_pending',
-  'authenticated',
-  'collecting',
-  'analyzing',
-  'done',
-  'failed',
-]
+import type {
+  ReportData,
+  SessionEvent,
+  SessionStatus,
+  SessionStatusResponse,
+} from './types'
 
 function App() {
   const [sessionId, setSessionId] = useState('')
@@ -38,6 +32,7 @@ function App() {
     setUiError('')
     setPosterNotice('')
     setReportData(null)
+
     try {
       const created = await createSession()
       setSessionId(created.session_id)
@@ -62,6 +57,7 @@ function App() {
     if (statusData.status === 'done' || statusData.status === 'failed') {
       return
     }
+
     const timer = window.setInterval(async () => {
       try {
         const next = await getSessionStatus(sessionId)
@@ -70,6 +66,7 @@ function App() {
         setUiError(toMessage(error))
       }
     }, 1800)
+
     return () => window.clearInterval(timer)
   }, [sessionId, statusData])
 
@@ -86,28 +83,30 @@ function App() {
   }, [statusData])
 
   useEffect(() => {
-    if (!statusData) {
+    if (!statusData || !sessionId || reportData) {
       return
     }
-    if (statusData.status === 'done' && sessionId && !reportData) {
-      void (async () => {
-        try {
-          const response = await getReportData(sessionId)
-          startTransition(() => {
-            setReportData(response.report)
-            setDisplayedProgress(100)
-          })
-        } catch (error) {
-          setUiError(toMessage(error))
-        }
-      })()
+    if (statusData.status !== 'done') {
+      return
     }
+
+    void (async () => {
+      try {
+        const response = await getReportData(sessionId)
+        startTransition(() => {
+          setReportData(response.report)
+          setDisplayedProgress(100)
+        })
+      } catch (error) {
+        setUiError(toMessage(error))
+      }
+    })()
   }, [sessionId, statusData, reportData])
 
   const pageMode =
     reportData && statusData?.status === 'done'
       ? 'result'
-      : statusData && ['collecting', 'analyzing'].includes(statusData.status)
+      : statusData && ['collecting', 'analyzing', 'done'].includes(statusData.status)
         ? 'analysis'
         : 'landing'
 
@@ -117,6 +116,7 @@ function App() {
     }
     setBusyAction('login')
     setUiError('')
+
     try {
       const data = await startLogin(sessionId)
       const next = await getSessionStatus(sessionId)
@@ -138,6 +138,7 @@ function App() {
     setBusyAction('analyze')
     setUiError('')
     setPosterNotice('')
+
     try {
       await analyzeSession(sessionId)
       const next = await getSessionStatus(sessionId)
@@ -157,9 +158,10 @@ function App() {
     }
     setBusyAction('poster')
     setPosterNotice('')
+
     try {
       const canvas = await html2canvas(reportRef.current, {
-        backgroundColor: '#07111f',
+        backgroundColor: '#000000',
         scale: 2,
         useCORS: true,
       })
@@ -181,9 +183,8 @@ function App() {
 
   return (
     <div className="app-shell">
-      <div className="aurora aurora-one" />
-      <div className="aurora aurora-two" />
-      <div className="grid-overlay" />
+      <div className="ambient ambient-violet" />
+      <div className="ambient ambient-blue" />
       <main className={`page page-${pageMode}`}>
         {pageMode === 'landing' ? (
           <LandingPage
@@ -192,8 +193,8 @@ function App() {
             error={uiError}
             sessionId={sessionId}
             statusData={statusData}
-            onConnect={handleConnect}
             onAnalyze={handleAnalyze}
+            onConnect={handleConnect}
             onReset={() => void bootstrapSession()}
           />
         ) : null}
@@ -231,105 +232,73 @@ interface LandingPageProps {
   error: string
   sessionId: string
   statusData: SessionStatusResponse | null
-  onConnect: () => void
   onAnalyze: () => void
+  onConnect: () => void
   onReset: () => void
 }
 
 function LandingPage(props: LandingPageProps) {
   const { booting, busyAction, error, sessionId, statusData, onAnalyze, onConnect, onReset } = props
-  const ready = statusData?.status === 'authenticated'
-  const verificationURL = statusData?.verification_url
+  const status = statusData?.status || 'created'
+  const panelState = resolveLandingPanel(status, busyAction, statusData?.verification_url)
+  const panelError = error || statusData?.error || ''
 
   return (
-    <section className="landing-layout">
-      <div className="hero-panel glass-card">
-        <div className="eyebrow">BSPI 2026</div>
-        <h1>解码你的飞书工作人格</h1>
-        <p className="hero-copy">
-          用本地授权的飞书协作数据，生成一份更像“工作现场行为画像”的 BSPI
-          报告。数据只在本机流转，不做云端托管。
-        </p>
-        <div className="hero-badges">
+    <section className="landing-page">
+      <div className="landing-brand">BSPI 2026</div>
+
+      <div className="landing-hero">
+        <p className="landing-kicker">基于本地飞书数据，生成你的 BSPI 分析报告。</p>
+        <h1>
+          <span>洞悉你的工作。</span>
+          <span className="gradient-line">重塑你的人格。</span>
+        </h1>
+        <p className="landing-subtitle">安全，且完全私密。所有授权数据仅在当前设备内处理。</p>
+        <div className="landing-pills">
           <span>Local First</span>
-          <span>Read-only Feishu</span>
-          <span>Structured AI Report</span>
-        </div>
-        <div className="hero-grid">
-          <StatCard value="3" label="主界面阶段" />
-          <StatCard value="20" label="人格候选" />
-          <StatCard value="30d" label="默认分析窗口" />
+          <span>Read-only Scope</span>
+          <span>Private by Design</span>
         </div>
       </div>
 
-      <div className="auth-panel">
-        <div className="glass-card auth-card">
-          <div className="card-header">
-            <div>
-              <div className="eyebrow">Connection Flow</div>
-              <h2>连接与授权</h2>
-            </div>
-            <span className={`status-pill status-${statusData?.status || 'created'}`}>
-              {friendlyStatus(statusData?.status || 'created')}
-            </span>
-          </div>
+      <div className="focus-panel">
+        <div className="focus-icon" aria-hidden="true">
+          {panelState.icon}
+        </div>
+        <div className="focus-copy">
+          <div className="focus-status">{panelState.eyebrow}</div>
+          <h2>{panelState.title}</h2>
+          <p>{panelState.description(sessionId)}</p>
+        </div>
 
-          <div className="step-stack">
-            <StepRow
-              active
-              title="本地运行"
-              description={sessionId ? `Session ${sessionId.slice(0, 8)} 已创建。` : '正在初始化本地会话。'}
-            />
-            <StepRow
-              active={Boolean(statusData && statusOrder.indexOf(statusData.status) >= 1)}
-              title="飞书配置 / 登录"
-              description={statusData?.progress.label || '等待连接飞书。'}
-            />
-            <StepRow
-              active={Boolean(statusData && statusOrder.indexOf(statusData.status) >= 3)}
-              title="AI 深度分析"
-              description={ready ? '当前会话已就绪，可以开始生成报告。' : '完成授权后即可开始。'}
-            />
-          </div>
+        <div className="focus-actions">
+          <button
+            className="primary-button"
+            disabled={panelState.primaryDisabled(booting)}
+            onClick={panelState.primaryAction === 'analyze' ? onAnalyze : onConnect}
+          >
+            {panelState.primaryLabel}
+          </button>
 
-          <div className="action-cluster">
-            <button
-              className="primary-button"
-              disabled={booting || busyAction === 'login'}
-              onClick={ready ? onAnalyze : onConnect}
-            >
-              {ready
-                ? busyAction === 'analyze'
-                  ? '正在提交分析...'
-                  : '开启 AI 深度解析'
-                : busyAction === 'login'
-                  ? '正在准备授权...'
-                  : '连接我的飞书'}
-            </button>
+          {panelState.showReset ? (
             <button className="secondary-button" disabled={busyAction === 'session'} onClick={onReset}>
               新建会话
             </button>
-            {statusData?.status === 'failed' ? (
-              <button className="ghost-link" onClick={ready ? onAnalyze : onConnect}>
-                立即重试
-              </button>
-            ) : null}
-          </div>
-
-          {verificationURL ? (
-            <div className="link-card">
-              <div className="eyebrow">Verification Link</div>
-              <a href={verificationURL} rel="noreferrer" target="_blank">
-                在新窗口中继续飞书授权
-              </a>
-            </div>
           ) : null}
 
-          {error ? <div className="error-banner">{error}</div> : null}
-          <div className="micro-note">
-            首次使用可能会看到应用配置引导；后续会优先复用本地可刷新登录态。
-          </div>
+          {statusData?.verification_url ? (
+            <a
+              className="text-link"
+              href={statusData.verification_url}
+              rel="noreferrer"
+              target="_blank"
+            >
+              在新窗口中继续飞书授权
+            </a>
+          ) : null}
         </div>
+
+        {panelError ? <div className="error-banner">{panelError}</div> : null}
       </div>
     </section>
   )
@@ -338,56 +307,58 @@ function LandingPage(props: LandingPageProps) {
 interface AnalysisPageProps {
   busyAction: string | null
   displayedProgress: number
-  events: SessionStatusResponse['events']
+  events: SessionEvent[]
   statusData: SessionStatusResponse
 }
 
 function AnalysisPage(props: AnalysisPageProps) {
   const { busyAction, displayedProgress, events, statusData } = props
+  const progress = Math.max(displayedProgress, statusData.progress.percent)
+
   return (
-    <section className="analysis-layout">
-      <div className="analysis-core glass-card">
-        <div className="orb-shell">
-          <div className="orb-pulse" />
-          <div className="orb-ring" />
-          <div className="orb-text">
-            <span>AI</span>
+    <section className="analysis-page">
+      <div className="analysis-hero">
+        <div
+          className="progress-ring"
+          style={{ ['--progress' as string]: `${progress}%` }}
+        >
+          <div className="progress-ring-inner">
             <strong>{statusData.progress.percent}%</strong>
+            <span>数据处理中...</span>
           </div>
         </div>
+
         <div className="analysis-copy">
-          <div className="eyebrow">Analysis Runtime</div>
-          <h2>{statusData.progress.label}</h2>
+          <h2>正在采集飞书协作数据</h2>
           <p>
-            正在把聊天、文档、日程、任务、邮件和会议等授权数据整合成一份结构化
-            BSPI 画像。保持当前页面开启，结果准备好后会自动切换。
+            将聊天、文档、日程等数据交由大模型处理，生成结构化 BSPI
+            画像。请勿关闭页面。
           </p>
-        </div>
-        <div className="progress-track">
-          <div className="progress-fill" style={{ width: `${displayedProgress}%` }} />
-        </div>
-        <div className="analysis-footnote">
-          {busyAction === 'analyze' ? '分析任务已发出，正在等待后端进入稳定处理。' : '报告生成中'}
+          <div className="analysis-note">
+            {busyAction === 'analyze'
+              ? '分析任务已提交，系统正在进入稳定处理阶段。'
+              : statusData.progress.label}
+          </div>
         </div>
       </div>
 
-      <div className="timeline-card glass-card">
-        <div className="card-header">
+      <div className="timeline-panel">
+        <div className="timeline-header">
+          <div className="timeline-status-dot" />
           <div>
-            <div className="eyebrow">Timeline</div>
-            <h3>状态流转播报</h3>
+            <div className="timeline-kicker">Session Flow</div>
+            <h3>状态流转</h3>
           </div>
-          <span className="terminal-dot" />
         </div>
-        <div className="timeline-list">
-          {events.map((event) => (
-            <div className="timeline-item" key={`${event.timestamp}-${event.stage}-${event.label}`}>
-              <div className="timeline-meta">
-                <span>{friendlyStatus(event.stage as SessionStatus)}</span>
-                <span>{new Date(event.timestamp).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
-              </div>
-              <div className="timeline-label">{event.label}</div>
-            </div>
+
+        <div className="timeline-stream">
+          {events.map((event, index) => (
+            <TimelineEvent
+              event={event}
+              index={index}
+              key={`${event.timestamp}-${event.stage}-${event.label}`}
+              total={events.length}
+            />
           ))}
         </div>
       </div>
@@ -408,156 +379,247 @@ interface ResultPageProps {
 }
 
 function ResultPage(props: ResultPageProps) {
-  const { busyAction, error, posterNotice, report, reportRef, sessionId, onAnalyze, onDownloadPoster, onReset } = props
+  const {
+    busyAction,
+    error,
+    posterNotice,
+    report,
+    reportRef,
+    sessionId,
+    onAnalyze,
+    onDownloadPoster,
+    onReset,
+  } = props
   const persona = report.primary_persona
+
   return (
-    <section className="result-layout">
+    <section className="result-page">
       <header className="result-header">
-        <div>
-          <div className="eyebrow">BSPI 2026</div>
-          <h2>你的工作人格画像已生成</h2>
-        </div>
-        <div className="header-actions">
+        <div className="result-brand">BSPI 2026</div>
+        <div className="result-header-actions">
           <button className="secondary-button" onClick={onReset}>
             新建会话
           </button>
-          <a className="ghost-link" href={`/api/sessions/${sessionId}/report`} rel="noreferrer" target="_blank">
+          <a
+            className="text-link"
+            href={`/api/sessions/${sessionId}/report`}
+            rel="noreferrer"
+            target="_blank"
+          >
             打开兼容版 HTML 报告
           </a>
         </div>
       </header>
 
-      <div className="report-grid" ref={reportRef}>
-        <article className="glass-card hero-report-card">
-          <div className="hero-report-copy">
-            <div className="eyebrow">Primary Persona</div>
-            <h1>
-              {persona.chinese_label}
-              <span>{persona.shorthand}</span>
-            </h1>
-            <p className="one-liner">{persona.one_liner}</p>
-            <div className="tag-row">
+      <div className="report-canvas" ref={reportRef}>
+        <div className="report-grid">
+          <section className="hero-column">
+            <div className="persona-overline">{persona.shorthand}</div>
+            <h1>{persona.chinese_label}</h1>
+            <p className="hero-one-liner">{persona.one_liner}</p>
+            <div className="outline-tags">
               {report.highlight_tags.map((tag) => (
-                <span className="tag-pill" key={tag}>
-                  {tag}
-                </span>
+                <span key={tag}>{tag}</span>
               ))}
             </div>
-          </div>
-          <img alt={persona.shorthand} className="persona-art" src={persona.image_url} />
-        </article>
+            <img alt={persona.shorthand} className="persona-art" src={persona.image_url} />
+          </section>
 
-        <article className="glass-card bento-card">
-          <div className="card-header">
-            <div>
-              <div className="eyebrow">Behavior Vectors</div>
-              <h3>行为信号</h3>
-            </div>
-            <span className="metric-chip">{report.analysis.confidence}</span>
-          </div>
-          <div className="vector-stack">
-            {report.behavior_vectors.map((vector) => (
-              <div className="vector-card" key={vector.label}>
-                <div className="vector-title">
-                  <span>{vector.label}</span>
-                  <strong>{vector.score}</strong>
-                </div>
-                <div className="vector-poles">
-                  <span>{vector.left_pole}</span>
-                  <span>{vector.right_pole}</span>
-                </div>
-                <div className="vector-bar-shell">
-                  <div className="vector-bar-fill" style={{ width: `${vector.score}%` }} />
-                </div>
-                <p>{vector.summary}</p>
+          <section className="report-column">
+            <div className="editorial-section">
+              <div className="section-kicker">Data Portrait</div>
+              <h2>行为解析</h2>
+              <div className="vector-list">
+                {report.behavior_vectors.map((vector) => (
+                  <article className="vector-row" key={vector.label}>
+                    <div className="vector-head">
+                      <div>
+                        <h3>{vector.label}</h3>
+                        <p>{vector.summary}</p>
+                      </div>
+                      <strong>{vector.score}</strong>
+                    </div>
+                    <div className="vector-poles">
+                      <span>{vector.left_pole}</span>
+                      <span>{vector.right_pole}</span>
+                    </div>
+                    <div className="vector-track">
+                      <div className="vector-fill" style={{ width: `${vector.score}%` }} />
+                      <div className="vector-thumb" style={{ left: `${vector.score}%` }} />
+                    </div>
+                  </article>
+                ))}
               </div>
-            ))}
-          </div>
-        </article>
+            </div>
 
-        <article className="glass-card bento-card insight-card">
-          <div className="eyebrow">AI Insight</div>
-          <h3>深度洞察</h3>
-          <p className="summary-text">{report.analysis.summary}</p>
-          <dl className="insight-grid">
-            <div>
-              <dt>沟通风格</dt>
-              <dd>{report.analysis.communication_style}</dd>
+            <div className="editorial-section">
+              <div className="section-kicker">Deep Reading</div>
+              <h2>深度洞察</h2>
+              <div className="insight-copy">
+                <p>{report.analysis.summary}</p>
+                <dl className="insight-list">
+                  <div>
+                    <dt>沟通风格</dt>
+                    <dd>{report.analysis.communication_style}</dd>
+                  </div>
+                  <div>
+                    <dt>工作偏好</dt>
+                    <dd>{report.analysis.work_preferences}</dd>
+                  </div>
+                  <div>
+                    <dt>风险与盲区</dt>
+                    <dd>{report.analysis.blind_spots}</dd>
+                  </div>
+                  <div>
+                    <dt>人格定义</dt>
+                    <dd>{persona.canonical_description}</dd>
+                  </div>
+                </dl>
+              </div>
             </div>
-            <div>
-              <dt>工作偏好</dt>
-              <dd>{report.analysis.work_preferences}</dd>
-            </div>
-            <div>
-              <dt>风险与盲区</dt>
-              <dd>{report.analysis.blind_spots}</dd>
-            </div>
-            <div>
-              <dt>官方定义</dt>
-              <dd>{persona.canonical_description}</dd>
-            </div>
-          </dl>
-        </article>
+          </section>
+        </div>
 
-        <article className="glass-card bento-card evidence-card">
-          <div className="eyebrow">Evidence & Coverage</div>
-          <h3>证据与覆盖</h3>
-          <ul className="evidence-list">
-            {report.analysis.evidence.map((item) => (
-              <li key={item}>{item}</li>
-            ))}
-          </ul>
-          <div className="coverage-box">
-            <strong>数据覆盖</strong>
-            <p>{report.coverage.summary}</p>
-            <div className="coverage-meta">
-              <span>已纳入：{report.coverage.successful_domains.join(' / ') || '无'}</span>
-              <span>未纳入：{report.coverage.failed_domains.join(' / ') || '无'}</span>
+        <section className="evidence-strip">
+          <div className="editorial-section">
+            <div className="section-kicker">Coverage</div>
+            <h2>证据与覆盖</h2>
+            <div className="coverage-layout">
+              <ul className="evidence-list">
+                {report.analysis.evidence.map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+              <div className="coverage-copy">
+                <p>{report.coverage.summary}</p>
+                <div className="coverage-meta">
+                  <span>已纳入：{report.coverage.successful_domains.join(' / ') || '无'}</span>
+                  <span>未纳入：{report.coverage.failed_domains.join(' / ') || '无'}</span>
+                </div>
+              </div>
             </div>
           </div>
-        </article>
+        </section>
+
+        <footer className="report-footer">
+          <div className="footer-meta">
+            <span>置信度 {report.analysis.confidence}</span>
+            <span>{report.share_card.disclaimer_short}</span>
+            <span>{report.analysis.disclaimer}</span>
+          </div>
+        </footer>
       </div>
 
-      <footer className="result-toolbar glass-card">
-        <div>
-          <div className="eyebrow">Local Export</div>
-          <p>{report.share_card.disclaimer_short}</p>
-        </div>
-        <div className="toolbar-actions">
-          <button className="secondary-button" disabled={busyAction === 'analyze'} onClick={onAnalyze}>
-            重新生成
-          </button>
-          <button className="primary-button" disabled={busyAction === 'poster'} onClick={onDownloadPoster}>
-            {busyAction === 'poster' ? '正在导出...' : '保存专属报告'}
-          </button>
-        </div>
-      </footer>
+      <div className="result-toolbar">
+        <button className="secondary-button" disabled={busyAction === 'analyze'} onClick={onAnalyze}>
+          重新生成
+        </button>
+        <button className="primary-button" disabled={busyAction === 'poster'} onClick={onDownloadPoster}>
+          {busyAction === 'poster' ? '正在导出...' : '保存专属报告'}
+        </button>
+      </div>
 
       {posterNotice ? <div className="notice-banner">{posterNotice}</div> : null}
-      {error ? <div className="error-banner result-error">{error}</div> : null}
+      {error ? <div className="error-banner">{error}</div> : null}
     </section>
   )
 }
 
-function StatCard(props: { value: string; label: string }) {
+function TimelineEvent(props: { event: SessionEvent; index: number; total: number }) {
+  const { event, index, total } = props
+  const completed = index < total - 1
+  const active = index === total - 1
+
   return (
-    <div className="mini-stat">
-      <strong>{props.value}</strong>
-      <span>{props.label}</span>
-    </div>
+    <article className="timeline-item">
+      <div className={`timeline-node ${completed ? 'done' : ''} ${active ? 'active' : ''}`}>
+        <span />
+      </div>
+      <div className="timeline-content">
+        <div className="timeline-row">
+          <strong>{friendlyStatus(event.stage as SessionStatus)}</strong>
+          <span>
+            {new Date(event.timestamp).toLocaleTimeString('zh-CN', {
+              hour: '2-digit',
+              minute: '2-digit',
+              second: '2-digit',
+            })}
+          </span>
+        </div>
+        <p>{event.label}</p>
+      </div>
+    </article>
   )
 }
 
-function StepRow(props: { active: boolean; title: string; description: string }) {
-  return (
-    <div className={`step-row ${props.active ? 'active' : ''}`}>
-      <span className="step-dot" />
-      <div>
-        <strong>{props.title}</strong>
-        <p>{props.description}</p>
-      </div>
-    </div>
-  )
+function resolveLandingPanel(
+  status: SessionStatus,
+  busyAction: string | null,
+  verificationURL?: string,
+) {
+  switch (status) {
+    case 'authenticated':
+      return {
+        eyebrow: 'Ready to Start',
+        title: '已就绪，可开始分析',
+        description: () => '授权已完成，接下来将开始生成你的结构化 BSPI 画像。',
+        icon: '●',
+        primaryLabel: busyAction === 'analyze' ? '正在提交分析...' : '开启 AI 深度解析',
+        primaryAction: 'analyze' as const,
+        primaryDisabled: (booting: boolean) => booting || busyAction === 'analyze',
+        showReset: true,
+      }
+    case 'config_pending':
+      return {
+        eyebrow: 'Configuration',
+        title: '继续完成配置',
+        description: () => '本地服务已经就绪，请按提示完成飞书应用配置后继续授权。',
+        icon: '◌',
+        primaryLabel: busyAction === 'login' ? '正在准备授权...' : '继续配置与授权',
+        primaryAction: 'connect' as const,
+        primaryDisabled: (booting: boolean) => booting || busyAction === 'login',
+        showReset: true,
+      }
+    case 'login_pending':
+      return {
+        eyebrow: 'Authorization',
+        title: verificationURL ? '连接飞书' : '等待授权完成',
+        description: () =>
+          verificationURL
+            ? '请完成浏览器授权，授权成功后系统会自动刷新当前状态。'
+            : '授权链接已创建，请在新窗口中完成飞书确认。',
+        icon: '↗',
+        primaryLabel: busyAction === 'login' ? '正在准备授权...' : '去授权',
+        primaryAction: 'connect' as const,
+        primaryDisabled: (booting: boolean) => booting || busyAction === 'login',
+        showReset: true,
+      }
+    case 'failed':
+      return {
+        eyebrow: 'Failed State',
+        title: '连接失败',
+        description: () => '无法完成飞书配置流程，请重试或新建会话。',
+        icon: '×',
+        primaryLabel: busyAction === 'login' ? '正在重试...' : '重新尝试',
+        primaryAction: 'connect' as const,
+        primaryDisabled: (booting: boolean) => booting || busyAction === 'login',
+        showReset: true,
+      }
+    default:
+      return {
+        eyebrow: 'Privacy First',
+        title: '连接飞书',
+        description: (sessionId: string) =>
+          sessionId
+            ? `本地会话 ${sessionId.slice(0, 8)} 已创建。连接后即可拉取只读范围内的协作数据。`
+            : '将基于本地飞书数据生成工作人格画像，所有信息只在当前设备中处理。',
+        icon: '◎',
+        primaryLabel: busyAction === 'login' ? '正在准备授权...' : '连接我的飞书',
+        primaryAction: 'connect' as const,
+        primaryDisabled: (booting: boolean) => booting || busyAction === 'login',
+        showReset: false,
+      }
+  }
 }
 
 function friendlyStatus(status: SessionStatus) {
@@ -569,9 +631,9 @@ function friendlyStatus(status: SessionStatus) {
     case 'authenticated':
       return '已就绪'
     case 'collecting':
-      return '采集中'
+      return '采集数据'
     case 'analyzing':
-      return '分析中'
+      return '人格分析'
     case 'done':
       return '已完成'
     case 'failed':
