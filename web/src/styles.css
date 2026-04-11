@@ -576,7 +576,7 @@ button {
   grid-template-columns: minmax(0, 1.08fr) minmax(320px, 0.92fr);
   grid-template-areas:
     'hero vectors'
-    'insight evidence'
+    'evidence insight'
     'footer footer';
   gap: 4rem;
 }
@@ -591,14 +591,39 @@ button {
   grid-area: hero;
   display: flex;
   flex-direction: column;
-  gap: 1.35rem;
-  min-height: 100%;
+  align-items: flex-start;
+  justify-content: flex-start;
+  gap: 1.15rem;
+  min-height: 0;
+}
+
+.hero-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  max-width: min(100%, 34rem);
+}
+
+.hero-subtitle {
+  margin: 0;
+  color: #8f8f96;
+  font-size: 0.95rem;
+  line-height: 1.5;
+  letter-spacing: 0.01em;
+  overflow-wrap: anywhere;
+}
+
+.hero-visual {
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-start;
+  padding-top: 0.2rem;
 }
 
 .hero-column h1 {
   margin: 0;
-  font-size: clamp(4.3rem, 10vw, 8rem);
-  line-height: 0.92;
+  font-size: clamp(3.6rem, 8vw, 6.2rem);
+  line-height: 0.9;
   letter-spacing: -0.07em;
   font-weight: 800;
 }
@@ -617,14 +642,21 @@ button {
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
+  overflow-wrap: anywhere;
 }
 
 .outline-tags span {
   background: transparent;
 }
 
+.insight-tags {
+  margin-top: -0.2rem;
+}
+
 .persona-art {
-  width: min(92%, 460px);
+  width: 100%;
+  max-width: 520px;
+  height: auto;
   object-fit: contain;
   align-self: flex-start;
   filter: drop-shadow(0 36px 70px rgba(0, 0, 0, 0.46));
@@ -764,6 +796,15 @@ button {
   color: #a1a1a6;
   font-size: 1.02rem;
   overflow-wrap: anywhere;
+}
+
+.insight-copy > .hero-one-liner {
+  padding-left: 0;
+  border-left: none;
+}
+
+.insight-copy > .outline-tags {
+  padding-left: 0;
 }
 
 .insight-list {
@@ -916,7 +957,8 @@ button {
   }
 
   .persona-art {
-    width: min(100%, 380px);
+    max-width: min(100%, 320px);
+    max-height: min(24vh, 260px);
   }
 }
 
@@ -943,6 +985,19 @@ button {
 
   .hero-column h1 {
     font-size: 3.7rem;
+  }
+
+  .hero-visual {
+    padding-top: 0;
+  }
+
+  .hero-subtitle {
+    font-size: 0.9rem;
+  }
+
+  .persona-art {
+    max-width: min(100%, 260px);
+    max-height: min(22vh, 220px);
   }
 
   .vector-head {

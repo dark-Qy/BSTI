@@ -418,15 +418,17 @@ function ResultPage(props: ResultPageProps) {
       <div className="report-canvas" ref={reportRef}>
         <div className="report-grid">
           <section className="hero-column report-region report-region-hero">
-            <div className="persona-overline">{persona.shorthand}</div>
-            <h1>{persona.chinese_label}</h1>
-            <p className="hero-one-liner">{persona.one_liner}</p>
-            <div className="outline-tags">
-              {report.highlight_tags.map((tag) => (
-                <span key={tag}>{tag}</span>
-              ))}
+            <div className="hero-copy">
+              <div className="persona-overline">{persona.shorthand}</div>
+              <h1>{persona.chinese_label}</h1>
+              <p className="hero-subtitle">
+                {persona.byte_style_dimension} / {persona.analysis_dimension}
+              </p>
             </div>
-            <img alt={persona.shorthand} className="persona-art" src={persona.image_url} />
+
+            <div className="hero-visual">
+              <img alt={persona.shorthand} className="persona-art" src={persona.image_url} />
+            </div>
           </section>
 
           <section className="editorial-section vector-section report-region report-region-vectors">
@@ -465,6 +467,12 @@ function ResultPage(props: ResultPageProps) {
             <div className="section-kicker">Deep Reading</div>
             <h2>深度洞察</h2>
             <div className="insight-copy">
+              <p className="hero-one-liner">{persona.one_liner}</p>
+              <div className="outline-tags insight-tags">
+                {report.highlight_tags.map((tag) => (
+                  <span key={tag}>{tag}</span>
+                ))}
+              </div>
               <p>{report.analysis.summary}</p>
               <dl className="insight-list">
                 <div>
