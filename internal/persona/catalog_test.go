@@ -31,7 +31,7 @@ func TestParseLLMResultBuildsStructuredPersonaResult(t *testing.T) {
 	  "communication_style": "会主动翻译语境差异，让不同角色更快对齐。",
 	  "work_preferences": "偏好多方协同、跨语境问题和需要桥接认知差异的场景。",
 	  "blind_spots": "容易长期适配别人，偶尔忽略自己的稳定表达方式。",
-	  "confidence": "高",
+	  "confidence": 0.86,
 	  "disclaimer": "仅基于授权数据的行为风格观察，不是心理诊断。"
 	}`
 
@@ -51,6 +51,9 @@ func TestParseLLMResultBuildsStructuredPersonaResult(t *testing.T) {
 	if len(got.Analysis.Evidence) != 2 {
 		t.Fatalf("evidence = %#v", got.Analysis.Evidence)
 	}
+	if got.Analysis.Confidence != 0.86 {
+		t.Fatalf("confidence = %v", got.Analysis.Confidence)
+	}
 }
 
 func TestParseLLMResultRejectsUnknownPersona(t *testing.T) {
@@ -61,7 +64,7 @@ func TestParseLLMResultRejectsUnknownPersona(t *testing.T) {
 	  "communication_style": "x",
 	  "work_preferences": "x",
 	  "blind_spots": "x",
-	  "confidence": "x",
+	  "confidence": 0.42,
 	  "disclaimer": "x"
 	}`
 
@@ -72,12 +75,49 @@ func TestParseLLMResultRejectsUnknownPersona(t *testing.T) {
 }
 
 func TestParseLLMResultAcceptsJSONCodeFence(t *testing.T) {
-	raw := "```json\n{\n  \"primary_persona\": \"CALM\",\n  \"summary\": \"x\",\n  \"evidence\": [\"x\"],\n  \"communication_style\": \"x\",\n  \"work_preferences\": \"x\",\n  \"blind_spots\": \"x\",\n  \"confidence\": \"x\",\n  \"disclaimer\": \"x\"\n}\n```"
+	raw := "```json\n{\n  \"primary_persona\": \"CALM\",\n  \"summary\": \"x\",\n  \"evidence\": [\"x\"],\n  \"communication_style\": \"x\",\n  \"work_preferences\": \"x\",\n  \"blind_spots\": \"x\",\n  \"confidence\": 0.75,\n  \"disclaimer\": \"x\"\n}\n```"
 	got, err := ParseLLMResult(raw)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if got.PrimaryPersona.Shorthand != "CALM" {
 		t.Fatalf("shorthand = %q", got.PrimaryPersona.Shorthand)
+	}
+}
+
+func TestParseLLMResultAcceptsStringConfidence(t *testing.T) {
+	raw := `{
+	  "primary_persona": "CALM",
+	  "summary": "x",
+	  "evidence": ["x"],
+	  "communication_style": "x",
+	  "work_preferences": "x",
+	  "blind_spots": "x",
+	  "confidence": "0.64",
+	  "disclaimer": "x"
+	}`
+	got, err := ParseLLMResult(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Analysis.Confidence != 0.64 {
+		t.Fatalf("confidence = %v", got.Analysis.Confidence)
+	}
+}
+
+func TestParseLLMResultRejectsOutOfRangeConfidence(t *testing.T) {
+	raw := `{
+	  "primary_persona": "CALM",
+	  "summary": "x",
+	  "evidence": ["x"],
+	  "communication_style": "x",
+	  "work_preferences": "x",
+	  "blind_spots": "x",
+	  "confidence": 1.2,
+	  "disclaimer": "x"
+	}`
+	_, err := ParseLLMResult(raw)
+	if err == nil || !strings.Contains(err.Error(), "confidence must be between 0 and 1") {
+		t.Fatalf("err = %v", err)
 	}
 }

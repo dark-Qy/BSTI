@@ -12,6 +12,10 @@ Users open the local web page, configure a Feishu app if the service has not bee
 - confidence and data coverage notes
 - disclaimer that this is not a diagnosis
 
+The report generation backend is configured through `LLM_PROVIDER`, `LLM_API_URL`, `LLM_API_KEY`, `LLM_MODEL`, and `LLM_MAX_TOKENS`. Users explicitly choose `modelhub` or `kimi`; the product does not auto-detect provider type from the URL and allows custom compatible gateway URLs.
+
+For deployed environments, the same HTTP service also exposes `GET /healthz` with a lightweight `{"status":"ok"}` response so BOE/TCE can confirm the process is ready before routing traffic.
+
 ## Persona Shorthand
 
 The report and its supporting visual assets should use memorable persona shorthand that favors common English words over compressed pseudo-acronyms. Each persona keeps a stable shorthand plus the existing Chinese label.

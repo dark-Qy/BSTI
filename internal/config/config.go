@@ -2,27 +2,35 @@ package config
 
 import (
 	"bufio"
+	"fmt"
 	"os"
 	"strconv"
 	"strings"
 )
 
-const defaultAIDPMaxTokens = 5000
+const defaultLLMMaxTokens = 5000
+
+type Provider string
+
+const (
+	ProviderModelHub Provider = "modelhub"
+	ProviderKimi     Provider = "kimi"
+)
 
 type Config struct {
-	AIDP         AIDPConfig
+	LLM          LLMConfig
 	Feishu       FeishuConfig
 	LarkCLIBin   string
 	AgentDataDir string
 	HTTPAddr     string
 }
 
-type AIDPConfig struct {
-	ModelHubURL string
-	AK          string
-	Model       string
-	MaxTokens   int
-	Stream      bool
+type LLMConfig struct {
+	Provider  Provider
+	APIURL    string
+	APIKey    string
+	Model     string
+	MaxTokens int
 }
 
 type FeishuConfig struct {
@@ -64,22 +72,42 @@ func Load(path string) (Config, error) {
 		return fallback
 	}
 
-	maxTokens, err := strconv.Atoi(get("AIDP_MAX_TOKENS", "5000"))
+	provider := Provider(strings.ToLower(get("LLM_PROVIDER", "")))
+	if provider == "" {
+		return Config{}, fmt.Errorf("missing LLM_PROVIDER in .env")
+	}
+	if provider != ProviderModelHub && provider != ProviderKimi {
+		return Config{}, fmt.Errorf("invalid LLM_PROVIDER %q", provider)
+	}
+
+	maxTokens, err := strconv.Atoi(get("LLM_MAX_TOKENS", "5000"))
 	if err != nil || maxTokens <= 0 {
-		maxTokens = defaultAIDPMaxTokens
+		maxTokens = defaultLLMMaxTokens
 	}
-	if maxTokens < defaultAIDPMaxTokens {
-		maxTokens = defaultAIDPMaxTokens
+	if maxTokens < defaultLLMMaxTokens {
+		maxTokens = defaultLLMMaxTokens
 	}
-	stream, _ := strconv.ParseBool(get("AIDP_STREAM", "false"))
+
+	apiURL := get("LLM_API_URL", "")
+	if apiURL == "" {
+		return Config{}, fmt.Errorf("missing LLM_API_URL in .env")
+	}
+	apiKey := get("LLM_API_KEY", "")
+	if apiKey == "" {
+		return Config{}, fmt.Errorf("missing LLM_API_KEY in .env")
+	}
+	model := get("LLM_MODEL", "")
+	if model == "" {
+		return Config{}, fmt.Errorf("missing LLM_MODEL in .env")
+	}
 
 	return Config{
-		AIDP: AIDPConfig{
-			ModelHubURL: get("AIDP_MODELHUB_URL", "https://aidp.bytedance.net/api/modelhub/online/v2/crawl"),
-			AK:          get("AIDP_AK", ""),
-			Model:       get("AIDP_MODEL", "gpt-5.4-2026-03-05"),
-			MaxTokens:   maxTokens,
-			Stream:      stream,
+		LLM: LLMConfig{
+			Provider:  provider,
+			APIURL:    apiURL,
+			APIKey:    apiKey,
+			Model:     model,
+			MaxTokens: maxTokens,
 		},
 		Feishu: FeishuConfig{
 			AppID:     get("LARK_APP_ID", ""),

@@ -4,15 +4,21 @@ The agent is a local Gin HTTP service with three boundaries:
 
 - HTTP server and web UI: session creation, login link presentation, status polling, analysis trigger, photo asset serving, and BSPI result rendering.
 - Sandbox executor: process-level isolation around `lark-cli`, with an allowlist, per-session working directory, and per-session `LARKSUITE_CLI_CONFIG_DIR`.
-- Analysis pipeline: read-only Feishu collection, raw session-private logs, BSPI persona prompt construction, AIDP ModelHub structured classification, and local report generation.
+- Analysis pipeline: read-only Feishu collection, raw session-private logs, BSPI persona prompt construction, provider-specific LLM chat classification through a unified `LLM_*` configuration, and local report generation.
 
 The service keeps a reusable local `lark-cli` profile at `data/lark-cli/` and seeds each session sandbox from it. User tokens remain managed by `lark-cli` storage; session files do not store raw access tokens.
+
+For BOE deployment, SCM packages the service as a Linux binary plus repo-owned runtime assets under `output/`. TCE starts the packaged app through `bootstrap.sh`, which sets deployment-friendly defaults for `HTTP_ADDR` and `AGENT_DATA_DIR`, then launches the binary from the packaged root so relative static assets such as `photos/` continue to resolve correctly.
 
 No Feishu write commands are part of the first version.
 
 The BSPI catalog is stored locally in the repo and contains 20 canonical personas. The LLM only selects a single Top1 shorthand from that catalog; the server owns the official Chinese label, image path, one-line image, dimension metadata, and canonical persona description. If the model returns an unknown or incomplete result, the server retries once with validation feedback and otherwise fails closed.
 
+LLM access is configured through `LLM_PROVIDER`, `LLM_API_URL`, `LLM_API_KEY`, `LLM_MODEL`, and `LLM_MAX_TOKENS`. The service currently ships two provider adapters, `modelhub` and `kimi`, behind one shared client interface. The provider is explicit user configuration rather than URL auto-detection, and the service intentionally does not enforce URL shape matching so custom gateways and compatible proxy URLs remain usable.
+
 Session states are `created`, `config_pending`, `login_pending`, `authenticated`, `collecting`, `analyzing`, `done`, and `failed`.
+
+The HTTP surface includes a lightweight `GET /healthz` endpoint that returns `200` with `{"status":"ok"}`. It is intended for TCE liveness and readiness checks and does not depend on Feishu credentials or session state.
 
 The sandbox command allowlist only permits:
 

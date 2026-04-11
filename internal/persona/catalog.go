@@ -3,6 +3,7 @@ package persona
 import (
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 )
 
@@ -32,7 +33,7 @@ type Analysis struct {
 	CommunicationStyle string   `json:"communication_style"`
 	WorkPreferences    string   `json:"work_preferences"`
 	BlindSpots         string   `json:"blind_spots"`
-	Confidence         string   `json:"confidence"`
+	Confidence         float64  `json:"confidence"`
 	Disclaimer         string   `json:"disclaimer"`
 }
 
@@ -48,7 +49,7 @@ type llmResponse struct {
 	CommunicationStyle string   `json:"communication_style"`
 	WorkPreferences    string   `json:"work_preferences"`
 	BlindSpots         string   `json:"blind_spots"`
-	Confidence         string   `json:"confidence"`
+	Confidence         any      `json:"confidence"`
 	Disclaimer         string   `json:"disclaimer"`
 }
 
@@ -305,8 +306,9 @@ func ParseLLMResult(raw string) (Result, error) {
 	if strings.TrimSpace(parsed.BlindSpots) == "" {
 		return Result{}, fmt.Errorf("blind_spots is required")
 	}
-	if strings.TrimSpace(parsed.Confidence) == "" {
-		return Result{}, fmt.Errorf("confidence is required")
+	confidence, err := parseConfidence(parsed.Confidence)
+	if err != nil {
+		return Result{}, err
 	}
 	if strings.TrimSpace(parsed.Disclaimer) == "" {
 		return Result{}, fmt.Errorf("disclaimer is required")
@@ -339,8 +341,35 @@ func ParseLLMResult(raw string) (Result, error) {
 			CommunicationStyle: strings.TrimSpace(parsed.CommunicationStyle),
 			WorkPreferences:    strings.TrimSpace(parsed.WorkPreferences),
 			BlindSpots:         strings.TrimSpace(parsed.BlindSpots),
-			Confidence:         strings.TrimSpace(parsed.Confidence),
+			Confidence:         confidence,
 			Disclaimer:         strings.TrimSpace(parsed.Disclaimer),
 		},
 	}, nil
+}
+
+func parseConfidence(raw any) (float64, error) {
+	switch value := raw.(type) {
+	case float64:
+		if value < 0 || value > 1 {
+			return 0, fmt.Errorf("confidence must be between 0 and 1")
+		}
+		return value, nil
+	case string:
+		value = strings.TrimSpace(value)
+		if value == "" {
+			return 0, fmt.Errorf("confidence is required")
+		}
+		parsed, err := strconv.ParseFloat(value, 64)
+		if err != nil {
+			return 0, fmt.Errorf("confidence must be a decimal number between 0 and 1")
+		}
+		if parsed < 0 || parsed > 1 {
+			return 0, fmt.Errorf("confidence must be between 0 and 1")
+		}
+		return parsed, nil
+	case nil:
+		return 0, fmt.Errorf("confidence is required")
+	default:
+		return 0, fmt.Errorf("confidence must be a decimal number between 0 and 1")
+	}
 }
