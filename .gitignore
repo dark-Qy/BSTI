@@ -3,7 +3,7 @@ data/
 .gocache/
 .gomodcache/
 *.log
-agent
+/agent
 bin/
 dist/
 output/
