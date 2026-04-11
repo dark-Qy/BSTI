@@ -15,6 +15,28 @@ import (
 	"feishu-personality-agent/internal/session"
 )
 
+func TestHealthzReturnsOK(t *testing.T) {
+	srv := New(ServerConfig{
+		App:   config.Config{},
+		Store: session.NewFileStore(t.TempDir()),
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	w := httptest.NewRecorder()
+	srv.Router().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", w.Code, w.Body.String())
+	}
+
+	var resp map[string]string
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	if resp["status"] != "ok" {
+		t.Fatalf("status body = %#v", resp)
+	}
+}
+
 func TestServerCreatesSessionAndStartsLogin(t *testing.T) {
 	store := session.NewFileStore(t.TempDir())
 	srv := New(ServerConfig{

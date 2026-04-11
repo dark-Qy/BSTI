@@ -8,11 +8,15 @@ The agent is a local Gin HTTP service with three boundaries:
 
 The service keeps a reusable local `lark-cli` profile at `data/lark-cli/` and seeds each session sandbox from it. User tokens remain managed by `lark-cli` storage; session files do not store raw access tokens.
 
+For BOE deployment, SCM packages the service as a Linux binary plus repo-owned runtime assets under `output/`. TCE starts the packaged app through `bootstrap.sh`, which sets deployment-friendly defaults for `HTTP_ADDR` and `AGENT_DATA_DIR`, then launches the binary from the packaged root so relative static assets such as `photos/` continue to resolve correctly.
+
 No Feishu write commands are part of the first version.
 
 The BSPI catalog is stored locally in the repo and contains 20 canonical personas. The LLM only selects a single Top1 shorthand from that catalog; the server owns the official Chinese label, image path, one-line image, dimension metadata, and canonical persona description. If the model returns an unknown or incomplete result, the server retries once with validation feedback and otherwise fails closed.
 
 Session states are `created`, `config_pending`, `login_pending`, `authenticated`, `collecting`, `analyzing`, `done`, and `failed`.
+
+The HTTP surface includes a lightweight `GET /healthz` endpoint that returns `200` with `{"status":"ok"}`. It is intended for TCE liveness and readiness checks and does not depend on Feishu credentials or session state.
 
 The sandbox command allowlist only permits:
 
