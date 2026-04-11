@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"os/exec"
@@ -196,18 +197,16 @@ func (s *Server) reportData(c *gin.Context) {
 }
 
 func (s *Server) startLogin(ctx context.Context, item *session.Session) (string, error) {
-	seeded, err := s.seedSessionCLIConfig(item)
+	reused, err := s.tryReuseLogin(ctx, item)
 	if err != nil {
 		return "", err
 	}
-	if seeded {
-		reused, err := s.tryReuseLogin(ctx, item)
-		if err != nil {
-			return "", err
-		}
-		if reused {
-			return "", nil
-		}
+	if reused {
+		return "", nil
+	}
+	seeded, err := s.seedSessionCLIConfig(item)
+	if err != nil {
+		return "", err
 	}
 	if s.cfg.Feishu.AppID == "" || s.cfg.Feishu.AppSecret == "" {
 		return s.startConfigThenLogin(ctx, item)
@@ -216,13 +215,6 @@ func (s *Server) startLogin(ctx context.Context, item *session.Session) (string,
 		if err := writeCLIConfig(item.Dir, s.cfg.Feishu); err != nil {
 			return "", err
 		}
-	}
-	reused, err := s.tryReuseLogin(ctx, item)
-	if err != nil {
-		return "", err
-	}
-	if reused {
-		return "", nil
 	}
 	return s.startOAuthLogin(ctx, item)
 }
@@ -255,11 +247,15 @@ func (s *Server) persistSessionCLIConfig(item *session.Session) error {
 	if err != nil {
 		return err
 	}
+	sanitized, err := sanitizeCLIConfig(data)
+	if err != nil {
+		return err
+	}
 	dstDir := s.sharedCLIConfigDir(item)
 	if err := os.MkdirAll(dstDir, 0700); err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(dstDir, "config.json"), data, 0600)
+	return os.WriteFile(filepath.Join(dstDir, "config.json"), sanitized, 0600)
 }
 
 func (s *Server) sharedCLIConfigDir(item *session.Session) string {
@@ -296,6 +292,47 @@ func (s *Server) tryReuseLogin(ctx context.Context, item *session.Session) (bool
 	item.DeviceCode = ""
 	item.Error = ""
 	return true, s.store.Save(item)
+}
+
+func sanitizeCLIConfig(raw []byte) ([]byte, error) {
+	var cfg map[string]any
+	if err := json.Unmarshal(raw, &cfg); err != nil {
+		return nil, fmt.Errorf("invalid lark-cli config: %w", err)
+	}
+
+	apps, ok := cfg["apps"].([]any)
+	if !ok || len(apps) == 0 {
+		return nil, errors.New("lark-cli config missing apps")
+	}
+
+	sanitizedApps := make([]map[string]any, 0, len(apps))
+	for _, item := range apps {
+		app, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		sanitizedApp := map[string]any{}
+		for _, key := range []string{"appId", "appSecret", "brand"} {
+			if value, ok := app[key]; ok {
+				sanitizedApp[key] = value
+			}
+		}
+		if len(sanitizedApp) > 0 {
+			sanitizedApps = append(sanitizedApps, sanitizedApp)
+		}
+	}
+	if len(sanitizedApps) == 0 {
+		return nil, errors.New("lark-cli config missing app template")
+	}
+
+	sanitized := map[string]any{
+		"apps": sanitizedApps,
+	}
+	data, err := json.Marshal(sanitized)
+	if err != nil {
+		return nil, err
+	}
+	return data, nil
 }
 
 func (s *Server) startConfigThenLogin(ctx context.Context, item *session.Session) (string, error) {
