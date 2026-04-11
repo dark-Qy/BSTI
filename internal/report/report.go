@@ -5,6 +5,7 @@ import (
 	"html"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"feishu-personality-agent/internal/persona"
@@ -58,6 +59,17 @@ func renderMarkdown(result persona.Result) string {
 	b.WriteString(result.Analysis.WorkPreferences + "\n\n")
 	b.WriteString("## 风险与盲区\n")
 	b.WriteString(result.Analysis.BlindSpots + "\n\n")
+	b.WriteString("## Highlight Tags\n")
+	for _, tag := range result.HighlightTags {
+		b.WriteString("- " + tag + "\n")
+	}
+	b.WriteString("\n## Behavior Vectors\n")
+	for _, vector := range result.BehaviorVectors {
+		b.WriteString("- " + vector.Label + ": " + vector.LeftPole + " ↔ " + vector.RightPole + " | " + strconv.Itoa(vector.Score) + "\n")
+		b.WriteString("  " + vector.Summary + "\n")
+	}
+	b.WriteString("\n## Data Coverage\n")
+	b.WriteString(result.Coverage.Summary + "\n\n")
 	b.WriteString("## 置信度\n")
 	b.WriteString(fmt.Sprintf("%.2f", result.Analysis.Confidence) + "\n\n")
 	b.WriteString("## 免责声明\n")
@@ -75,6 +87,8 @@ func renderHTML(result persona.Result) string {
 	b.WriteString("h1,h2{margin:0 0 12px} h2{margin-top:28px}")
 	b.WriteString(".meta{margin:0 0 16px;padding:0;list-style:none}.meta li{margin:4px 0}")
 	b.WriteString(".summary,.section{margin-bottom:20px}.section p{margin:0}.evidence{padding-left:18px}")
+	b.WriteString(".tags{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0 0}.tag{display:inline-flex;padding:6px 10px;border-radius:999px;background:#f2f4f7;font-size:13px}")
+	b.WriteString(".vector{padding:14px 16px;border:1px solid #e5e7eb;border-radius:12px;margin:12px 0}.vector-head{display:flex;justify-content:space-between;gap:12px;font-weight:600}.vector-bar{height:10px;background:#eef2ff;border-radius:999px;overflow:hidden;margin:10px 0}.vector-fill{height:100%;background:linear-gradient(90deg,#4f46e5,#06b6d4)}")
 	b.WriteString("</style></head><body>")
 	b.WriteString("<div class=\"hero\">")
 	b.WriteString("<div><img src=\"" + html.EscapeString(result.PrimaryPersona.ImageURL) + "\" alt=\"" + html.EscapeString(result.PrimaryPersona.Shorthand) + "\"></div>")
@@ -90,6 +104,24 @@ func renderHTML(result persona.Result) string {
 	b.WriteString("</div></div>")
 	b.WriteString("<div class=\"section\"><h2>官方人格定义</h2><p>" + html.EscapeString(result.PrimaryPersona.CanonicalDescription) + "</p></div>")
 	b.WriteString("<div class=\"section\"><h2>个体分析摘要</h2><p>" + html.EscapeString(result.Analysis.Summary) + "</p></div>")
+	if len(result.HighlightTags) > 0 {
+		b.WriteString("<div class=\"section\"><h2>高亮标签</h2><div class=\"tags\">")
+		for _, tag := range result.HighlightTags {
+			b.WriteString("<span class=\"tag\">" + html.EscapeString(tag) + "</span>")
+		}
+		b.WriteString("</div></div>")
+	}
+	if len(result.BehaviorVectors) > 0 {
+		b.WriteString("<div class=\"section\"><h2>行为信号</h2>")
+		for _, vector := range result.BehaviorVectors {
+			b.WriteString("<div class=\"vector\">")
+			b.WriteString("<div class=\"vector-head\"><span>" + html.EscapeString(vector.Label) + "</span><span>" + html.EscapeString(vector.LeftPole) + " · " + html.EscapeString(vector.RightPole) + " · " + html.EscapeString(strconv.Itoa(vector.Score)) + "</span></div>")
+			b.WriteString("<div class=\"vector-bar\"><div class=\"vector-fill\" style=\"width:" + html.EscapeString(strconv.Itoa(vector.Score)) + "%\"></div></div>")
+			b.WriteString("<p>" + html.EscapeString(vector.Summary) + "</p>")
+			b.WriteString("</div>")
+		}
+		b.WriteString("</div>")
+	}
 	b.WriteString("<div class=\"section\"><h2>证据</h2><ul class=\"evidence\">")
 	for _, item := range result.Analysis.Evidence {
 		b.WriteString("<li>" + html.EscapeString(item) + "</li>")
@@ -98,6 +130,9 @@ func renderHTML(result persona.Result) string {
 	b.WriteString("<div class=\"section\"><h2>沟通风格</h2><p>" + html.EscapeString(result.Analysis.CommunicationStyle) + "</p></div>")
 	b.WriteString("<div class=\"section\"><h2>工作偏好</h2><p>" + html.EscapeString(result.Analysis.WorkPreferences) + "</p></div>")
 	b.WriteString("<div class=\"section\"><h2>风险与盲区</h2><p>" + html.EscapeString(result.Analysis.BlindSpots) + "</p></div>")
+	if result.Coverage.Summary != "" {
+		b.WriteString("<div class=\"section\"><h2>数据覆盖</h2><p>" + html.EscapeString(result.Coverage.Summary) + "</p></div>")
+	}
 	b.WriteString("<div class=\"section\"><h2>免责声明</h2><p>" + html.EscapeString(result.Analysis.Disclaimer) + "</p></div>")
 	b.WriteString("</body></html>")
 	return b.String()

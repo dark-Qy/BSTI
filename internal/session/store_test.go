@@ -45,3 +45,27 @@ func TestStoreNormalizesRelativeBaseDirToAbsoluteSessionDir(t *testing.T) {
 		t.Fatalf("session dir = %q, want clean path %q", s.Dir, got)
 	}
 }
+
+func TestStoreCreateSeedsCreatedEvent(t *testing.T) {
+	store := NewFileStore(t.TempDir())
+	s, err := store.Create()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(s.Events) != 1 {
+		t.Fatalf("events = %#v", s.Events)
+	}
+	if s.Events[0].Stage != string(StatusCreated) {
+		t.Fatalf("event stage = %q", s.Events[0].Stage)
+	}
+}
+
+func TestRecordEventSkipsConsecutiveDuplicates(t *testing.T) {
+	s := &Session{}
+	s.RecordEvent(StatusCreated, "Session created", 5)
+	s.RecordEvent(StatusCreated, "Session created", 5)
+	s.RecordEvent(StatusAuthenticated, "Feishu authorization completed", 45)
+	if len(s.Events) != 2 {
+		t.Fatalf("events = %#v", s.Events)
+	}
+}

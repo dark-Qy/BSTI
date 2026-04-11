@@ -37,9 +37,34 @@ type Analysis struct {
 	Disclaimer         string   `json:"disclaimer"`
 }
 
+type BehaviorVector struct {
+	Label     string `json:"label"`
+	LeftPole  string `json:"left_pole"`
+	RightPole string `json:"right_pole"`
+	Score     int    `json:"score"`
+	Summary   string `json:"summary"`
+}
+
+type ShareCard struct {
+	Title           string `json:"title"`
+	Subtitle        string `json:"subtitle"`
+	ImageURL        string `json:"image_url"`
+	DisclaimerShort string `json:"disclaimer_short"`
+}
+
+type Coverage struct {
+	SuccessfulDomains []string `json:"successful_domains"`
+	FailedDomains     []string `json:"failed_domains"`
+	Summary           string   `json:"summary"`
+}
+
 type Result struct {
-	PrimaryPersona Primary  `json:"primary_persona"`
-	Analysis       Analysis `json:"analysis"`
+	PrimaryPersona  Primary          `json:"primary_persona"`
+	Analysis        Analysis         `json:"analysis"`
+	HighlightTags   []string         `json:"highlight_tags"`
+	BehaviorVectors []BehaviorVector `json:"behavior_vectors"`
+	ShareCard       ShareCard        `json:"share_card"`
+	Coverage        Coverage         `json:"coverage"`
 }
 
 type llmResponse struct {
@@ -49,8 +74,27 @@ type llmResponse struct {
 	CommunicationStyle string   `json:"communication_style"`
 	WorkPreferences    string   `json:"work_preferences"`
 	BlindSpots         string   `json:"blind_spots"`
+	HighlightTags      []string `json:"highlight_tags"`
+	BehaviorVectors    []struct {
+		Label     string `json:"label"`
+		LeftPole  string `json:"left_pole"`
+		RightPole string `json:"right_pole"`
+		Score     int    `json:"score"`
+		Summary   string `json:"summary"`
+	} `json:"behavior_vectors"`
 	Confidence         any      `json:"confidence"`
 	Disclaimer         string   `json:"disclaimer"`
+}
+
+var expectedBehaviorVectors = []struct {
+	Label     string
+	LeftPole  string
+	RightPole string
+}{
+	{Label: "协作方式", LeftPole: "独立成局", RightPole: "高频协同"},
+	{Label: "表达风格", LeftPole: "克制压缩", RightPole: "高频输出"},
+	{Label: "决策路径", LeftPole: "证据校准", RightPole: "直觉快判"},
+	{Label: "推进节奏", LeftPole: "稳态推进", RightPole: "高压突进"},
 }
 
 var catalog = []Definition{
@@ -309,6 +353,12 @@ func ParseLLMResult(raw string) (Result, error) {
 	confidence, err := parseConfidence(parsed.Confidence)
 	if err != nil {
 		return Result{}, err
+	if len(parsed.HighlightTags) < 2 || len(parsed.HighlightTags) > 4 {
+		return Result{}, fmt.Errorf("highlight_tags must contain 2 to 4 items")
+	}
+	if len(parsed.BehaviorVectors) != len(expectedBehaviorVectors) {
+		return Result{}, fmt.Errorf("behavior_vectors must contain %d items", len(expectedBehaviorVectors))
+	}
 	}
 	if strings.TrimSpace(parsed.Disclaimer) == "" {
 		return Result{}, fmt.Errorf("disclaimer is required")
@@ -324,8 +374,44 @@ func ParseLLMResult(raw string) (Result, error) {
 	if len(evidence) == 0 {
 		return Result{}, fmt.Errorf("evidence is required")
 	}
+	tags := make([]string, 0, len(parsed.HighlightTags))
+	for _, item := range parsed.HighlightTags {
+		item = strings.TrimSpace(item)
+		if item != "" {
+			tags = append(tags, item)
+		}
+	}
+	if len(tags) < 2 || len(tags) > 4 {
+		return Result{}, fmt.Errorf("highlight_tags must contain 2 to 4 non-empty items")
+	}
+	vectors := make([]BehaviorVector, 0, len(parsed.BehaviorVectors))
+	for i, item := range parsed.BehaviorVectors {
+		expected := expectedBehaviorVectors[i]
+		if strings.TrimSpace(item.Label) != expected.Label {
+			return Result{}, fmt.Errorf("behavior_vectors[%d].label must be %q", i, expected.Label)
+		}
+		if strings.TrimSpace(item.LeftPole) != expected.LeftPole {
+			return Result{}, fmt.Errorf("behavior_vectors[%d].left_pole must be %q", i, expected.LeftPole)
+		}
+		if strings.TrimSpace(item.RightPole) != expected.RightPole {
+			return Result{}, fmt.Errorf("behavior_vectors[%d].right_pole must be %q", i, expected.RightPole)
+		}
+		if item.Score < 0 || item.Score > 100 {
+			return Result{}, fmt.Errorf("behavior_vectors[%d].score must be between 0 and 100", i)
+		}
+		if strings.TrimSpace(item.Summary) == "" {
+			return Result{}, fmt.Errorf("behavior_vectors[%d].summary is required", i)
+		}
+		vectors = append(vectors, BehaviorVector{
+			Label:     expected.Label,
+			LeftPole:  expected.LeftPole,
+			RightPole: expected.RightPole,
+			Score:     item.Score,
+			Summary:   strings.TrimSpace(item.Summary),
+		})
+	}
 
-	return Result{
+	result := Result{
 		PrimaryPersona: Primary{
 			Shorthand:            def.Shorthand,
 			ChineseLabel:         def.ChineseLabel,
@@ -344,7 +430,16 @@ func ParseLLMResult(raw string) (Result, error) {
 			Confidence:         confidence,
 			Disclaimer:         strings.TrimSpace(parsed.Disclaimer),
 		},
-	}, nil
+		HighlightTags:   tags,
+		BehaviorVectors: vectors,
+	}
+	result.ShareCard = ShareCard{
+		Title:           result.PrimaryPersona.ChineseLabel + " / " + result.PrimaryPersona.Shorthand,
+		Subtitle:        result.PrimaryPersona.OneLiner,
+		ImageURL:        result.PrimaryPersona.ImageURL,
+		DisclaimerShort: result.Analysis.Disclaimer,
+	}
+	return result, nil
 }
 
 func parseConfidence(raw any) (float64, error) {

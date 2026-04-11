@@ -1,14 +1,15 @@
 # Architecture
 
-The agent is a local Gin HTTP service with three boundaries:
+The agent is a local Gin HTTP service with four boundaries:
 
-- HTTP server and web UI: session creation, login link presentation, status polling, analysis trigger, photo asset serving, and BSPI result rendering.
+- HTTP server and API surface: session creation, login link presentation, status polling, analysis trigger, photo asset serving, compatibility HTML report serving, and structured JSON report serving.
+- React/Vite frontend: a built single-page app under `web/dist/` that consumes the session API and renders the landing, loading, and result flows.
 - Sandbox executor: process-level isolation around `lark-cli`, with an allowlist, per-session working directory, and per-session `LARKSUITE_CLI_CONFIG_DIR`.
 - Analysis pipeline: read-only Feishu collection, raw session-private logs, BSPI persona prompt construction, provider-specific LLM chat classification through a unified `LLM_*` configuration, and local report generation.
 
 The service keeps a reusable local `lark-cli` profile at `data/lark-cli/` and seeds each session sandbox from it. User tokens remain managed by `lark-cli` storage; session files do not store raw access tokens.
 
-For BOE deployment, SCM packages the service as a Linux binary plus repo-owned runtime assets under `output/`. TCE starts the packaged app through `bootstrap.sh`, which sets deployment-friendly defaults for `HTTP_ADDR` and `AGENT_DATA_DIR`, then launches the binary from the packaged root so relative static assets such as `photos/` continue to resolve correctly.
+For BOE deployment, SCM packages the service as a Linux binary plus repo-owned runtime assets under `output/`. TCE starts the packaged app through `bootstrap.sh`, which sets deployment-friendly defaults for `HTTP_ADDR` and `AGENT_DATA_DIR`, then launches the binary from the packaged root so relative static assets such as `photos/` and `web/dist/` continue to resolve correctly.
 
 No Feishu write commands are part of the first version.
 
@@ -16,9 +17,29 @@ The BSPI catalog is stored locally in the repo and contains 20 canonical persona
 
 LLM access is configured through `LLM_PROVIDER`, `LLM_API_URL`, `LLM_API_KEY`, `LLM_MODEL`, and `LLM_MAX_TOKENS`. The service currently ships two provider adapters, `modelhub` and `kimi`, behind one shared client interface. The provider is explicit user configuration rather than URL auto-detection, and the service intentionally does not enforce URL shape matching so custom gateways and compatible proxy URLs remain usable.
 
+The structured report now includes:
+
+- `highlight_tags`
+- `behavior_vectors` with four fixed work-style signals
+- `share_card` metadata for local poster export
+- `coverage` summarizing successful and failed data domains
+
 Session states are `created`, `config_pending`, `login_pending`, `authenticated`, `collecting`, `analyzing`, `done`, and `failed`.
 
+Each session also stores an append-only event timeline. Every major state transition records:
+
+- `stage`
+- `label`
+- `percent`
+- `timestamp`
+
 The HTTP surface includes a lightweight `GET /healthz` endpoint that returns `200` with `{"status":"ok"}`. It is intended for TCE liveness and readiness checks and does not depend on Feishu credentials or session state.
+
+The HTTP surface now includes:
+
+- `GET /api/sessions/{id}/status` with additive `progress`, `events`, and `next_action` fields
+- `GET /api/sessions/{id}/report-data` for the React frontend
+- `GET /api/sessions/{id}/report` as a compatibility HTML fallback
 
 The sandbox command allowlist only permits:
 

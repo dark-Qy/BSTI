@@ -34,8 +34,16 @@ type Session struct {
 	ReportMarkdown  string          `json:"report_markdown,omitempty"`
 	ReportHTML      string          `json:"report_html,omitempty"`
 	PersonaResult   *persona.Result `json:"persona_result,omitempty"`
+	Events          []Event         `json:"events,omitempty"`
 	CreatedAt       time.Time       `json:"created_at"`
 	UpdatedAt       time.Time       `json:"updated_at"`
+}
+
+type Event struct {
+	Stage     string    `json:"stage"`
+	Label     string    `json:"label"`
+	Percent   int       `json:"percent"`
+	Timestamp time.Time `json:"timestamp"`
 }
 
 type FileStore struct {
@@ -65,6 +73,7 @@ func (s *FileStore) Create() (*Session, error) {
 		CreatedAt: now,
 		UpdatedAt: now,
 	}
+	session.RecordEvent(StatusCreated, "Session created", 5)
 	if err := os.MkdirAll(sessionDir, 0700); err != nil {
 		return nil, err
 	}
@@ -96,6 +105,28 @@ func (s *FileStore) Save(session *Session) error {
 		return err
 	}
 	return os.WriteFile(filepath.Join(session.Dir, "session.json"), append(data, '\n'), 0600)
+}
+
+func (s *Session) RecordEvent(stage Status, label string, percent int) {
+	if percent < 0 {
+		percent = 0
+	}
+	if percent > 100 {
+		percent = 100
+	}
+	event := Event{
+		Stage:     string(stage),
+		Label:     label,
+		Percent:   percent,
+		Timestamp: time.Now().UTC(),
+	}
+	if n := len(s.Events); n > 0 {
+		last := s.Events[n-1]
+		if last.Stage == event.Stage && last.Label == event.Label && last.Percent == event.Percent {
+			return
+		}
+	}
+	s.Events = append(s.Events, event)
 }
 
 func newID() (string, error) {

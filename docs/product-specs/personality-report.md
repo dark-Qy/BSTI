@@ -1,8 +1,16 @@
 # Personality Report Product Spec
 
-Users open the local web page, configure a Feishu app if the service has not been preconfigured, authorize Feishu access, and request analysis. The service returns a local report page with:
+Users open the local web page, configure a Feishu app if the service has not been preconfigured, authorize Feishu access, and request analysis. The product flow is divided into three UI stages:
+
+- Landing & Auth
+- Analysis & Loading
+- Result & Persona Report
+
+The result page renders from structured JSON and presents:
 
 - a single BSPI Top1 persona with image
+- 2-4 highlight tags
+- four fixed behavior vectors
 - official persona definition
 - evidence-based individual summary
 - evidence-based observations
@@ -10,11 +18,26 @@ Users open the local web page, configure a Feishu app if the service has not bee
 - work preference notes
 - likely blind spots
 - confidence and data coverage notes
+- local poster export action
 - disclaimer that this is not a diagnosis
 
 The report generation backend is configured through `LLM_PROVIDER`, `LLM_API_URL`, `LLM_API_KEY`, `LLM_MODEL`, and `LLM_MAX_TOKENS`. Users explicitly choose `modelhub` or `kimi`; the product does not auto-detect provider type from the URL and allows custom compatible gateway URLs.
 
+The four behavior vectors are fixed and must stay stable across reports:
+
+| Label | Left Pole | Right Pole |
+| --- | --- | --- |
+| 协作方式 | 独立成局 | 高频协同 |
+| 表达风格 | 克制压缩 | 高频输出 |
+| 决策路径 | 证据校准 | 直觉快判 |
+| 推进节奏 | 稳态推进 | 高压突进 |
+
 For deployed environments, the same HTTP service also exposes `GET /healthz` with a lightweight `{"status":"ok"}` response so BOE/TCE can confirm the process is ready before routing traffic.
+
+The frontend also relies on:
+
+- `GET /api/sessions/{id}/status` additive fields `progress`, `events`, and `next_action`
+- `GET /api/sessions/{id}/report-data` structured report JSON
 
 ## Persona Shorthand
 

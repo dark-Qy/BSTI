@@ -125,14 +125,22 @@ func BuildAnalysisPrompt(bundle Bundle, catalog []persona.Definition) string {
 	var b strings.Builder
 	b.WriteString("你是 BSPI（ByteStyle Personality Index）人格分析助手。不要做医学或心理诊断，不要展示思考过程。\n")
 	b.WriteString("你必须只从给定的 20 个 BSPI 人格中选择 1 个最匹配的主人格，并只输出合法 JSON，不要输出 Markdown、解释文字或代码块外文本。\n")
-	b.WriteString("JSON 字段必须严格为：primary_persona, summary, evidence, communication_style, work_preferences, blind_spots, confidence, disclaimer。\n")
-	b.WriteString("其中 primary_persona 必须是给定的人格 shorthand 之一；evidence 必须是字符串数组。\n\n")
+	b.WriteString("JSON 字段必须严格为：primary_persona, summary, evidence, communication_style, work_preferences, blind_spots, highlight_tags, behavior_vectors, confidence, disclaimer。\n")
+	b.WriteString("其中 primary_persona 必须是给定的人格 shorthand 之一；evidence 和 highlight_tags 必须是字符串数组。\n")
+	b.WriteString("behavior_vectors 必须是长度为 4 的数组，且每个对象都必须包含 label, left_pole, right_pole, score, summary。\n")
+	b.WriteString("behavior_vectors 的顺序和极点必须严格如下：\n")
+	b.WriteString("1. 协作方式 | 独立成局 | 高频协同\n")
+	b.WriteString("2. 表达风格 | 克制压缩 | 高频输出\n")
+	b.WriteString("3. 决策路径 | 证据校准 | 直觉快判\n")
+	b.WriteString("4. 推进节奏 | 稳态推进 | 高压突进\n")
+	b.WriteString("score 必须是 0 到 100 的整数；summary 需要解释该维度为何得到该分值。\n\n")
 	b.WriteString("写作要求：\n")
 	b.WriteString("- summary 需要写成一段信息密度高的中文总结，不少于 120 字；要说明主人格判断、最关键的行为模式、跨场景一致性，以及结论成立的前提。\n")
 	b.WriteString("- evidence 至少提供 4 条，优先引用跨域一致信号；每条都要尽量说明信号来自哪些授权数据域，例如 chat/docs/calendar/task/mail/vc。\n")
 	b.WriteString("- communication_style 不能只写性格标签，要说明对方通常怎么表达、怎么推进讨论、在冲突或分歧时更可能怎样反应。\n")
 	b.WriteString("- work_preferences 需要覆盖工作节奏、协作方式、决策偏好、任务选择或信息处理习惯，尽量给出稳定倾向而不是单次事件。\n")
 	b.WriteString("- blind_spots 需要写得具体，说明潜在风险、容易被误解的点，以及什么情境下这些风险更容易出现。\n")
+	b.WriteString("- highlight_tags 需要给出 2 到 4 个短标签，适合结果页首屏快速感知，不要写成长句。\n")
 	b.WriteString("- confidence 必须是 0 到 1 之间的数字，并保留两位小数；数值越高代表证据越充分、跨域一致性越强。如果证据不足、数据偏单一或域之间相互矛盾，就降低分数。\n")
 	b.WriteString("- disclaimer 需要强调这只是基于已授权工作数据的行为风格分析，不是能力评估、价值判断或医学诊断。\n")
 	b.WriteString("- 不要编造没有出现在授权数据中的事实；如果某个维度缺乏证据，就明确说缺证据，不要硬补。\n\n")
@@ -153,6 +161,29 @@ func BuildAnalysisPrompt(bundle Bundle, catalog []persona.Definition) string {
 	}
 	b.WriteString("请基于授权数据完成 20 选 1，并输出 JSON。\n")
 	return b.String()
+}
+
+func Coverage(bundle Bundle) persona.Coverage {
+	coverage := persona.Coverage{
+		SuccessfulDomains: []string{},
+		FailedDomains:     []string{},
+	}
+	for _, domain := range bundle.Domains {
+		if strings.TrimSpace(domain.Error) == "" {
+			coverage.SuccessfulDomains = append(coverage.SuccessfulDomains, domain.Domain)
+			continue
+		}
+		coverage.FailedDomains = append(coverage.FailedDomains, domain.Domain)
+	}
+	switch {
+	case len(coverage.SuccessfulDomains) > 0 && len(coverage.FailedDomains) > 0:
+		coverage.Summary = fmt.Sprintf("已覆盖 %d 个数据域，%d 个数据域因权限或命令失败未纳入。", len(coverage.SuccessfulDomains), len(coverage.FailedDomains))
+	case len(coverage.SuccessfulDomains) > 0:
+		coverage.Summary = fmt.Sprintf("已覆盖 %d 个数据域，授权数据足以生成当前结果。", len(coverage.SuccessfulDomains))
+	default:
+		coverage.Summary = "未获得可用数据域，当前结果可能不完整。"
+	}
+	return coverage
 }
 
 func appendRaw(path string, result DomainResult) error {

@@ -2,9 +2,11 @@
 data/
 .gocache/
 .gomodcache/
+.npm-cache/
 *.log
 /agent
 bin/
 dist/
 output/
 coverage.out
+web/node_modules/
