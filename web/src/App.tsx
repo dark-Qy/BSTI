@@ -166,7 +166,7 @@ function App() {
         useCORS: true,
       })
       const link = document.createElement('a')
-      link.download = `${reportData.primary_persona.shorthand.toLowerCase()}-bspi-report.png`
+      link.download = `${reportData.primary_persona.shorthand.toLowerCase()}-bsti-report.png`
       link.href = canvas.toDataURL('image/png')
       link.click()
       setPosterNotice('专属海报已导出到本地。')
@@ -245,10 +245,10 @@ function LandingPage(props: LandingPageProps) {
 
   return (
     <section className="landing-page">
-      <div className="landing-brand">BSPI 2026</div>
+      <div className="landing-brand">BSTI 2026</div>
 
       <div className="landing-hero">
-        <p className="landing-kicker">基于本地飞书数据，生成你的 BSPI 分析报告。</p>
+        <p className="landing-kicker">基于本地飞书数据，生成你的 BSTI 分析报告。</p>
         <h1>
           <span>洞悉你的工作。</span>
           <span className="gradient-line">重塑你的人格。</span>
@@ -331,7 +331,7 @@ function AnalysisPage(props: AnalysisPageProps) {
         <div className="analysis-copy">
           <h2>正在采集飞书协作数据</h2>
           <p>
-            将聊天、文档、日程等数据交由大模型处理，生成结构化 BSPI
+            将聊天、文档、日程等数据交由大模型处理，生成结构化 BSTI
             画像。请勿关闭页面。
           </p>
           <div className="analysis-note">
@@ -399,7 +399,7 @@ function ResultPage(props: ResultPageProps) {
   return (
     <section className="result-page">
       <header className="result-header">
-        <div className="result-brand">BSPI 2026</div>
+        <div className="result-brand">BSTI 2026</div>
         <div className="result-header-actions">
           <button className="secondary-button" onClick={onReset}>
             新建会话
@@ -576,7 +576,7 @@ function resolveLandingPanel(
       return {
         eyebrow: 'Ready to Start',
         title: '已就绪，可开始分析',
-        description: () => '授权已完成，接下来将开始生成你的结构化 BSPI 画像。',
+        description: () => '授权已完成，接下来将开始生成你的结构化 BSTI 画像。',
         icon: '●',
         primaryLabel: busyAction === 'analyze' ? '正在提交分析...' : '开启 AI 深度解析',
         primaryAction: 'analyze' as const,

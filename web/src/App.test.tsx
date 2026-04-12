@@ -46,6 +46,7 @@ describe('App', () => {
 
     render(<App />)
 
+    expect(await screen.findByText('BSTI 2026')).toBeInTheDocument()
     expect(await screen.findByText('洞悉你的工作。')).toBeInTheDocument()
     expect(screen.getByText('重塑你的人格。')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '连接我的飞书' })).toBeInTheDocument()
@@ -156,6 +157,7 @@ describe('App', () => {
 
     const { container } = render(<App />)
 
+    expect(await screen.findByText('BSTI 2026')).toBeInTheDocument()
     expect(await screen.findByText('刨坟者')).toBeInTheDocument()
     expect(screen.getByText('行为解析')).toBeInTheDocument()
     expect(screen.getByText('深度洞察')).toBeInTheDocument()

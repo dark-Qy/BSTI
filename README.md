@@ -1,6 +1,6 @@
 # Feishu Personality Agent
 
-Local web agent for collecting authorized Feishu data through `lark-cli` and generating a BSPI Top1 persona report with the configured LLM chat endpoint.
+Local web agent for collecting authorized Feishu data through `lark-cli` and generating a BSTI Top1 persona report with the configured LLM chat endpoint.
 
 The current UI is a React/Vite single-page app served by the Go HTTP service. It guides users through three stages:
 
@@ -11,6 +11,7 @@ The current UI is a React/Vite single-page app served by the Go HTTP service. It
 ## Quick Start
 
 1. Install `lark-cli` and make sure it is available on `PATH`.
+   Installation guide: [lark-cli 安装教程](https://bytedance.larkoffice.com/docx/WnHkdJQM6oGpQFxm9i7ckVdenSh)
 2. Fill in `.env` with the unified `LLM_*` configuration. `LARK_APP_ID` and `LARK_APP_SECRET` are optional; if blank and no reusable app template exists, the web login flow first asks you to configure a Feishu app through `lark-cli config init --new`.
 3. Install and build the frontend once:
 
@@ -108,7 +109,7 @@ The packaged service still expects `lark-cli` to be available in the runtime ima
 - `GET /healthz` returns `200` with `{"status":"ok"}` for liveness and readiness checks.
 - `POST /api/sessions` creates a local session.
 - `POST /api/sessions/{id}/login` returns the current Feishu link when authorization is needed. If an existing local token is valid or refreshable, the session becomes authenticated without returning a new link.
-- `GET /api/sessions/{id}/status` returns session state, progress metadata, an event timeline, the next recommended action, and, once ready, the Top1 BSPI persona summary used by the home page card.
+- `GET /api/sessions/{id}/status` returns session state, progress metadata, an event timeline, the next recommended action, and, once ready, the Top1 BSTI persona summary used by the home page card.
 - `POST /api/sessions/{id}/analyze` starts read-only collection and report generation.
 - `GET /api/sessions/{id}/report` returns the compatibility HTML result page with the persona image, official persona definition, and LLM-generated analysis.
 - `GET /api/sessions/{id}/report-data` returns the structured JSON report consumed by the React frontend. It includes:
