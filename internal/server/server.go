@@ -483,7 +483,7 @@ func (s *Server) runAnalysis(ctx context.Context, item *session.Session) error {
 	if err != nil {
 		return err
 	}
-	recordStatus(item, session.StatusAnalyzing, "正在调用 AIDP 生成结构化 BSPI 报告")
+	recordStatus(item, session.StatusAnalyzing, "正在调用 AIDP 生成结构化 BSTI 报告")
 	if err := s.store.Save(item); err != nil {
 		return err
 	}
@@ -653,7 +653,7 @@ var indexHTML = `<!doctype html>
       if (data.primary_persona) {
         const card = document.getElementById("persona");
         card.style.display = "block";
-        card.innerHTML = '<div style="display:grid;grid-template-columns:120px 1fr;gap:16px;align-items:center;border:1px solid #ddd;border-radius:8px;padding:16px;margin:16px 0"><img src="' + data.primary_persona.image_url + '" alt="' + data.primary_persona.shorthand + '" style="width:120px;height:auto;border-radius:8px"><div><div style="font-size:12px;color:#666">BSPI Top1 Persona</div><div style="font-weight:700;font-size:20px">' + data.primary_persona.shorthand + ' / ' + data.primary_persona.chinese_label + '</div><div style="margin-top:6px">' + data.primary_persona.one_liner + '</div></div></div>';
+        card.innerHTML = '<div style="display:grid;grid-template-columns:120px 1fr;gap:16px;align-items:center;border:1px solid #ddd;border-radius:8px;padding:16px;margin:16px 0"><img src="' + data.primary_persona.image_url + '" alt="' + data.primary_persona.shorthand + '" style="width:120px;height:auto;border-radius:8px"><div><div style="font-size:12px;color:#666">BSTI Top1 Persona</div><div style="font-weight:700;font-size:20px">' + data.primary_persona.shorthand + ' / ' + data.primary_persona.chinese_label + '</div><div style="margin-top:6px">' + data.primary_persona.one_liner + '</div></div></div>';
       }
       if (!["done", "failed"].includes(data.status)) setTimeout(poll, 2000);
     }

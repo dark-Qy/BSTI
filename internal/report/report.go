@@ -37,7 +37,7 @@ func WriteLocal(dir string, result persona.Result) (Paths, error) {
 
 func renderMarkdown(result persona.Result) string {
 	var b strings.Builder
-	b.WriteString("# BSPI Personality Report\n\n")
+	b.WriteString("# BSTI Personality Report\n\n")
 	b.WriteString("## Primary Persona\n")
 	b.WriteString("- Shorthand: " + result.PrimaryPersona.Shorthand + "\n")
 	b.WriteString("- 中文名: " + result.PrimaryPersona.ChineseLabel + "\n")
@@ -79,7 +79,7 @@ func renderMarkdown(result persona.Result) string {
 
 func renderHTML(result persona.Result) string {
 	var b strings.Builder
-	b.WriteString("<!doctype html><html><head><meta charset=\"utf-8\"><title>BSPI Personality Report</title><style>")
+	b.WriteString("<!doctype html><html><head><meta charset=\"utf-8\"><title>BSTI Personality Report</title><style>")
 	b.WriteString("body{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;max-width:960px;margin:32px auto;line-height:1.6;padding:0 20px;color:#111}")
 	b.WriteString(".hero{display:grid;grid-template-columns:minmax(240px,320px) 1fr;gap:24px;align-items:start;margin-bottom:28px}")
 	b.WriteString(".hero img{width:100%;height:auto;border-radius:8px;display:block}")
@@ -93,7 +93,7 @@ func renderHTML(result persona.Result) string {
 	b.WriteString("<div class=\"hero\">")
 	b.WriteString("<div><img src=\"" + html.EscapeString(result.PrimaryPersona.ImageURL) + "\" alt=\"" + html.EscapeString(result.PrimaryPersona.Shorthand) + "\"></div>")
 	b.WriteString("<div>")
-	b.WriteString("<div class=\"eyebrow\">BSPI Top1 Persona</div>")
+	b.WriteString("<div class=\"eyebrow\">BSTI Top1 Persona</div>")
 	b.WriteString("<h1>" + html.EscapeString(result.PrimaryPersona.Shorthand) + " / " + html.EscapeString(result.PrimaryPersona.ChineseLabel) + "</h1>")
 	b.WriteString("<p class=\"summary\">" + html.EscapeString(result.PrimaryPersona.OneLiner) + "</p>")
 	b.WriteString("<ul class=\"meta\">")
