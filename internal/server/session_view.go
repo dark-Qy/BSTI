@@ -19,7 +19,7 @@ func progressForStatus(status session.Status) progressView {
 	case session.StatusCollecting:
 		return progressView{Stage: string(status), Label: "正在采集授权范围内的飞书数据", Percent: 66}
 	case session.StatusAnalyzing:
-		return progressView{Stage: string(status), Label: "正在生成结构化 BSPI 报告", Percent: 86}
+		return progressView{Stage: string(status), Label: "正在生成结构化 BSTI 报告", Percent: 86}
 	case session.StatusDone:
 		return progressView{Stage: string(status), Label: "报告已生成", Percent: 100}
 	case session.StatusFailed:

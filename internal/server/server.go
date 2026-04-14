@@ -209,6 +209,9 @@ func (s *Server) startLogin(ctx context.Context, item *session.Session) (string,
 		return "", err
 	}
 	if s.cfg.Feishu.AppID == "" || s.cfg.Feishu.AppSecret == "" {
+		if seeded {
+			return s.startOAuthLogin(ctx, item)
+		}
 		return s.startConfigThenLogin(ctx, item)
 	}
 	if !seeded {

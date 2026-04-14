@@ -247,6 +247,111 @@ button {
   margin: 0.85rem 0 0;
 }
 
+.focus-note {
+  margin-top: 0.95rem;
+  color: #9fa7b2;
+  font-size: 0.88rem;
+  line-height: 1.65;
+}
+
+.auth-steps {
+  width: 100%;
+  display: grid;
+  gap: 0.85rem;
+  margin-top: 0.25rem;
+}
+
+.auth-step {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 0.9rem;
+  align-items: center;
+  width: 100%;
+  padding: 0.95rem 1rem;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+  text-align: left;
+}
+
+.auth-step-marker {
+  width: 1.9rem;
+  height: 1.9rem;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.76);
+  font-size: 0.88rem;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.auth-step-copy {
+  min-width: 0;
+}
+
+.auth-step-copy strong {
+  display: block;
+  font-size: 0.95rem;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.auth-step-copy p {
+  margin: 0.28rem 0 0;
+  color: #86868b;
+  font-size: 0.84rem;
+  line-height: 1.55;
+}
+
+.auth-step-state {
+  padding: 0.35rem 0.7rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: #9fa7b2;
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+
+.auth-step-active {
+  border-color: rgba(41, 151, 255, 0.34);
+  background: rgba(41, 151, 255, 0.08);
+  box-shadow: inset 0 0 0 1px rgba(41, 151, 255, 0.08);
+}
+
+.auth-step-active .auth-step-marker {
+  background: rgba(41, 151, 255, 0.18);
+  border-color: rgba(41, 151, 255, 0.32);
+  color: #ffffff;
+  box-shadow: 0 0 16px rgba(41, 151, 255, 0.22);
+}
+
+.auth-step-active .auth-step-state {
+  color: #c7e2ff;
+  border-color: rgba(41, 151, 255, 0.22);
+  background: rgba(41, 151, 255, 0.1);
+}
+
+.auth-step-done .auth-step-marker {
+  background: rgba(56, 214, 146, 0.14);
+  border-color: rgba(56, 214, 146, 0.22);
+  color: #dcfff0;
+}
+
+.auth-step-done .auth-step-state {
+  color: #aff0d4;
+}
+
+.auth-step-failed {
+  border-color: rgba(255, 104, 132, 0.22);
+  background: rgba(255, 104, 132, 0.08);
+}
+
+.auth-step-failed .auth-step-marker,
+.auth-step-failed .auth-step-state {
+  color: #ffb7c5;
+  border-color: rgba(255, 104, 132, 0.24);
+}
+
 .focus-actions {
   justify-content: center;
 }
@@ -464,6 +569,12 @@ button {
   grid-template-columns: 1.3rem 1fr;
   gap: 1rem;
   animation: rise 360ms ease;
+  padding: 0.8rem 0.9rem 0.8rem 0;
+  border-radius: 20px;
+  transition:
+    background-color 180ms ease,
+    border-color 180ms ease,
+    box-shadow 180ms ease;
 }
 
 .timeline-node {
@@ -528,7 +639,8 @@ button {
 }
 
 .timeline-content {
-  padding-bottom: 0.6rem;
+  padding-bottom: 0.2rem;
+  min-width: 0;
 }
 
 .timeline-row {
@@ -551,6 +663,38 @@ button {
 .timeline-content p {
   margin: 0.4rem 0 0;
   font-size: 0.92rem;
+}
+
+.timeline-item.is-current {
+  background: rgba(41, 151, 255, 0.08);
+  box-shadow:
+    inset 0 0 0 1px rgba(41, 151, 255, 0.18),
+    0 0 0 1px rgba(41, 151, 255, 0.04);
+}
+
+.timeline-item.is-current .timeline-row strong {
+  color: #ffffff;
+}
+
+.timeline-item.is-current .timeline-row span,
+.timeline-item.is-current .timeline-content p {
+  color: #bfdcff;
+}
+
+.timeline-item.is-completed .timeline-row strong {
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.timeline-item.is-completed .timeline-content p {
+  color: rgba(207, 221, 240, 0.74);
+}
+
+.timeline-item.is-pending .timeline-row strong {
+  color: rgba(255, 255, 255, 0.64);
+}
+
+.timeline-item.is-pending .timeline-content p {
+  color: rgba(160, 172, 189, 0.72);
 }
 
 .result-page {
