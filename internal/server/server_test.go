@@ -481,6 +481,51 @@ func TestServerFallsBackToOAuthWhenStoredTokenIsMissing(t *testing.T) {
 	testServerFallsBackToOAuthForTokenStatus(t, "")
 }
 
+func TestServerReusesSeededAppConfigForOAuthWithoutReturningToConfigStep(t *testing.T) {
+	dataDir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dataDir, "lark-cli"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dataDir, "lark-cli", "config.json"), []byte(`{"apps":[{"appId":"cli_fake","appSecret":"fake","brand":"feishu"}]}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	store := session.NewFileStore(dataDir)
+	srv := New(ServerConfig{
+		App: config.Config{
+			AgentDataDir: dataDir,
+			LarkCLIBin:   os.Args[0],
+		},
+		Store: store,
+	})
+	t.Setenv("FAKE_LARK_CLI_SERVER", "1")
+	t.Setenv("FAKE_AUTH_URL", "https://auth.example/verify")
+	t.Setenv("FAKE_CONFIG_URL", "https://config.example/page/cli")
+
+	req := httptest.NewRequest(http.MethodPost, "/api/sessions", nil)
+	w := httptest.NewRecorder()
+	srv.Router().ServeHTTP(w, req)
+	var created map[string]string
+	if err := json.Unmarshal(w.Body.Bytes(), &created); err != nil {
+		t.Fatal(err)
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/api/sessions/"+created["session_id"]+"/login", nil)
+	w = httptest.NewRecorder()
+	srv.Router().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("login status = %d body=%s", w.Code, w.Body.String())
+	}
+
+	var login map[string]string
+	if err := json.Unmarshal(w.Body.Bytes(), &login); err != nil {
+		t.Fatal(err)
+	}
+	if login["verification_url"] != "https://auth.example/verify" {
+		t.Fatalf("verification_url = %q", login["verification_url"])
+	}
+}
+
 func testServerFallsBackToOAuthForTokenStatus(t *testing.T, tokenStatus string) {
 	t.Helper()
 	dataDir := t.TempDir()

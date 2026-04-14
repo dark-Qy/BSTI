@@ -1,6 +1,7 @@
 import html2canvas from 'html2canvas'
 import { startTransition, useEffect, useRef, useState } from 'react'
 import type { RefObject } from 'react'
+import { LandingPage } from './landing-auth'
 import {
   analyzeSession,
   createSession,
@@ -24,7 +25,49 @@ function App() {
   const [uiError, setUiError] = useState('')
   const [displayedProgress, setDisplayedProgress] = useState(5)
   const [posterNotice, setPosterNotice] = useState('')
+  const [authorizationReturnPhase, setAuthorizationReturnPhase] = useState<'idle' | 'armed' | 'checking'>('idle')
   const reportRef = useRef<HTMLDivElement>(null)
+  const authorizationReturnPhaseRef = useRef<'idle' | 'armed' | 'checking'>('idle')
+  const authorizationReturnDeadlineRef = useRef<number | null>(null)
+
+  function clearAuthorizationReturnCheck() {
+    authorizationReturnDeadlineRef.current = null
+    authorizationReturnPhaseRef.current = 'idle'
+    setAuthorizationReturnPhase('idle')
+  }
+
+  function armAuthorizationReturnCheck() {
+    authorizationReturnDeadlineRef.current = null
+    authorizationReturnPhaseRef.current = 'armed'
+    setAuthorizationReturnPhase('armed')
+  }
+
+  async function refreshSessionStatus(reason: 'poll' | 'return' | 'connect' = 'poll') {
+    if (!sessionId) {
+      return null
+    }
+
+    try {
+      const next = await getSessionStatus(sessionId)
+      setStatusData(next)
+
+      if (['authenticated', 'collecting', 'analyzing', 'done', 'failed'].includes(next.status)) {
+        clearAuthorizationReturnCheck()
+        return next
+      }
+
+      if (reason === 'return') {
+        authorizationReturnDeadlineRef.current = Date.now() + 6000
+        authorizationReturnPhaseRef.current = 'checking'
+        setAuthorizationReturnPhase('checking')
+      }
+
+      return next
+    } catch (error) {
+      setUiError(toMessage(error))
+      return null
+    }
+  }
 
   async function bootstrapSession() {
     setBooting(true)
@@ -38,6 +81,7 @@ function App() {
       setSessionId(created.session_id)
       const status = await getSessionStatus(created.session_id)
       setStatusData(status)
+      clearAuthorizationReturnCheck()
     } catch (error) {
       setUiError(toMessage(error))
     } finally {
@@ -51,6 +95,10 @@ function App() {
   }, [])
 
   useEffect(() => {
+    authorizationReturnPhaseRef.current = authorizationReturnPhase
+  }, [authorizationReturnPhase])
+
+  useEffect(() => {
     if (!sessionId || !statusData) {
       return
     }
@@ -59,16 +107,53 @@ function App() {
     }
 
     const timer = window.setInterval(async () => {
-      try {
-        const next = await getSessionStatus(sessionId)
-        setStatusData(next)
-      } catch (error) {
-        setUiError(toMessage(error))
-      }
-    }, 1800)
+      void refreshSessionStatus('poll')
+    }, authorizationReturnPhase === 'checking' ? 400 : 1800)
 
     return () => window.clearInterval(timer)
-  }, [sessionId, statusData])
+  }, [authorizationReturnPhase, sessionId, statusData])
+
+  useEffect(() => {
+    if (authorizationReturnPhase !== 'checking') {
+      return
+    }
+    const deadline = authorizationReturnDeadlineRef.current
+    if (!deadline) {
+      return
+    }
+    const remaining = deadline - Date.now()
+    if (remaining <= 0) {
+      clearAuthorizationReturnCheck()
+      return
+    }
+    const timer = window.setTimeout(() => {
+      clearAuthorizationReturnCheck()
+    }, remaining)
+    return () => window.clearTimeout(timer)
+  }, [authorizationReturnPhase])
+
+  useEffect(() => {
+    function beginAuthorizationReturnCheck() {
+      if (authorizationReturnPhaseRef.current !== 'armed') {
+        return
+      }
+      if (document.visibilityState === 'hidden') {
+        return
+      }
+      authorizationReturnDeadlineRef.current = Date.now() + 6000
+      authorizationReturnPhaseRef.current = 'checking'
+      setAuthorizationReturnPhase('checking')
+      void refreshSessionStatus('return')
+    }
+
+    window.addEventListener('focus', beginAuthorizationReturnCheck)
+    document.addEventListener('visibilitychange', beginAuthorizationReturnCheck)
+
+    return () => {
+      window.removeEventListener('focus', beginAuthorizationReturnCheck)
+      document.removeEventListener('visibilitychange', beginAuthorizationReturnCheck)
+    }
+  }, [sessionId])
 
   useEffect(() => {
     if (!statusData) {
@@ -119,9 +204,11 @@ function App() {
 
     try {
       const data = await startLogin(sessionId)
-      const next = await getSessionStatus(sessionId)
-      setStatusData(next)
+      const next = await refreshSessionStatus('connect')
       if (data.verification_url) {
+        if (next?.status !== 'authenticated') {
+          armAuthorizationReturnCheck()
+        }
         window.open(data.verification_url, '_blank', 'noopener,noreferrer')
       }
     } catch (error) {
@@ -129,6 +216,11 @@ function App() {
     } finally {
       setBusyAction(null)
     }
+  }
+
+  function handleOpenVerificationURL(url: string) {
+    armAuthorizationReturnCheck()
+    window.open(url, '_blank', 'noopener,noreferrer')
   }
 
   async function handleAnalyze() {
@@ -191,10 +283,12 @@ function App() {
             booting={booting}
             busyAction={busyAction}
             error={uiError}
+            isCheckingAuthorizationReturn={authorizationReturnPhase === 'checking'}
             sessionId={sessionId}
             statusData={statusData}
             onAnalyze={handleAnalyze}
             onConnect={handleConnect}
+            onOpenVerificationURL={handleOpenVerificationURL}
             onReset={() => void bootstrapSession()}
           />
         ) : null}
@@ -223,84 +317,6 @@ function App() {
         ) : null}
       </main>
     </div>
-  )
-}
-
-interface LandingPageProps {
-  booting: boolean
-  busyAction: string | null
-  error: string
-  sessionId: string
-  statusData: SessionStatusResponse | null
-  onAnalyze: () => void
-  onConnect: () => void
-  onReset: () => void
-}
-
-function LandingPage(props: LandingPageProps) {
-  const { booting, busyAction, error, sessionId, statusData, onAnalyze, onConnect, onReset } = props
-  const status = statusData?.status || 'created'
-  const panelState = resolveLandingPanel(status, busyAction, statusData?.verification_url)
-  const panelError = error || statusData?.error || ''
-
-  return (
-    <section className="landing-page">
-      <div className="landing-brand">BSTI 2026</div>
-
-      <div className="landing-hero">
-        <p className="landing-kicker">基于本地飞书数据，生成你的 BSTI 分析报告。</p>
-        <h1>
-          <span>洞悉你的工作。</span>
-          <span className="gradient-line">重塑你的人格。</span>
-        </h1>
-        <p className="landing-subtitle">安全，且完全私密。所有授权数据仅在当前设备内处理。</p>
-        <div className="landing-pills">
-          <span>Local First</span>
-          <span>Read-only Scope</span>
-          <span>Private by Design</span>
-        </div>
-      </div>
-
-      <div className="focus-panel">
-        <div className="focus-icon" aria-hidden="true">
-          {panelState.icon}
-        </div>
-        <div className="focus-copy">
-          <div className="focus-status">{panelState.eyebrow}</div>
-          <h2>{panelState.title}</h2>
-          <p>{panelState.description(sessionId)}</p>
-        </div>
-
-        <div className="focus-actions">
-          <button
-            className="primary-button"
-            disabled={panelState.primaryDisabled(booting)}
-            onClick={panelState.primaryAction === 'analyze' ? onAnalyze : onConnect}
-          >
-            {panelState.primaryLabel}
-          </button>
-
-          {panelState.showReset ? (
-            <button className="secondary-button" disabled={busyAction === 'session'} onClick={onReset}>
-              新建会话
-            </button>
-          ) : null}
-
-          {statusData?.verification_url ? (
-            <a
-              className="text-link"
-              href={statusData.verification_url}
-              rel="noreferrer"
-              target="_blank"
-            >
-              在新窗口中继续飞书授权
-            </a>
-          ) : null}
-        </div>
-
-        {panelError ? <div className="error-banner">{panelError}</div> : null}
-      </div>
-    </section>
   )
 }
 
@@ -543,9 +559,10 @@ function TimelineEvent(props: { event: SessionEvent; index: number; total: numbe
   const { event, index, total } = props
   const completed = index < total - 1
   const active = index === total - 1
+  const stateClass = active ? 'is-current' : completed ? 'is-completed' : 'is-pending'
 
   return (
-    <article className="timeline-item">
+    <article className={`timeline-item ${stateClass}`}>
       <div className={`timeline-node ${completed ? 'done' : ''} ${active ? 'active' : ''}`}>
         <span />
       </div>
@@ -564,76 +581,6 @@ function TimelineEvent(props: { event: SessionEvent; index: number; total: numbe
       </div>
     </article>
   )
-}
-
-function resolveLandingPanel(
-  status: SessionStatus,
-  busyAction: string | null,
-  verificationURL?: string,
-) {
-  switch (status) {
-    case 'authenticated':
-      return {
-        eyebrow: 'Ready to Start',
-        title: '已就绪，可开始分析',
-        description: () => '授权已完成，接下来将开始生成你的结构化 BSTI 画像。',
-        icon: '●',
-        primaryLabel: busyAction === 'analyze' ? '正在提交分析...' : '开启 AI 深度解析',
-        primaryAction: 'analyze' as const,
-        primaryDisabled: (booting: boolean) => booting || busyAction === 'analyze',
-        showReset: true,
-      }
-    case 'config_pending':
-      return {
-        eyebrow: 'Configuration',
-        title: '继续完成配置',
-        description: () => '本地服务已经就绪，请按提示完成飞书应用配置后继续授权。',
-        icon: '◌',
-        primaryLabel: busyAction === 'login' ? '正在准备授权...' : '继续配置与授权',
-        primaryAction: 'connect' as const,
-        primaryDisabled: (booting: boolean) => booting || busyAction === 'login',
-        showReset: true,
-      }
-    case 'login_pending':
-      return {
-        eyebrow: 'Authorization',
-        title: verificationURL ? '连接飞书' : '等待授权完成',
-        description: () =>
-          verificationURL
-            ? '请完成浏览器授权，授权成功后系统会自动刷新当前状态。'
-            : '授权链接已创建，请在新窗口中完成飞书确认。',
-        icon: '↗',
-        primaryLabel: busyAction === 'login' ? '正在准备授权...' : '去授权',
-        primaryAction: 'connect' as const,
-        primaryDisabled: (booting: boolean) => booting || busyAction === 'login',
-        showReset: true,
-      }
-    case 'failed':
-      return {
-        eyebrow: 'Failed State',
-        title: '连接失败',
-        description: () => '无法完成飞书配置流程，请重试或新建会话。',
-        icon: '×',
-        primaryLabel: busyAction === 'login' ? '正在重试...' : '重新尝试',
-        primaryAction: 'connect' as const,
-        primaryDisabled: (booting: boolean) => booting || busyAction === 'login',
-        showReset: true,
-      }
-    default:
-      return {
-        eyebrow: 'Privacy First',
-        title: '连接飞书',
-        description: (sessionId: string) =>
-          sessionId
-            ? `本地会话 ${sessionId.slice(0, 8)} 已创建。连接后即可拉取只读范围内的协作数据。`
-            : '将基于本地飞书数据生成工作人格画像，所有信息只在当前设备中处理。',
-        icon: '◎',
-        primaryLabel: busyAction === 'login' ? '正在准备授权...' : '连接我的飞书',
-        primaryAction: 'connect' as const,
-        primaryDisabled: (booting: boolean) => booting || busyAction === 'login',
-        showReset: false,
-      }
-  }
 }
 
 function friendlyStatus(status: SessionStatus) {
