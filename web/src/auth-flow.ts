@@ -2,9 +2,10 @@ import type { SessionStatusResponse } from './types'
 
 export type AuthFlowPhase =
   | 'created'
+  | 'created_preconfigured'
   | 'config_pending'
   | 'login_pending'
-  | 'login_pending_reused'
+  | 'login_pending_preconfigured'
   | 'checking_authorization_return'
   | 'authenticated'
   | 'failed_step_1'
@@ -44,15 +45,17 @@ export interface AuthFlowViewModelOptions {
   statusData: SessionStatusResponse | null
 }
 
-const CREATED_REUSE_HINT = '若已存在可复用的飞书应用配置，将自动跳过第一步配置。'
 const RETURN_CHECK_COPY = '如果你刚刚已在浏览器完成授权，系统会在几秒内自动更新，无需再次点击。'
 const RETURN_CHECK_STEP_COPY = '已提交浏览器授权，等待系统确认。'
+const PRECONFIGURED_CREATED_HINT = '服务端已预置飞书应用配置，本次将直接进入飞书授权。'
+const PRECONFIGURED_LOGIN_HINT = '服务端已预置飞书应用配置，本次只需完成飞书授权。'
+const PRECONFIGURED_STEP_COPY = '服务端已预置飞书应用配置，本次无需手动完成这一步。'
 
 export function buildAuthFlowViewModel(options: AuthFlowViewModelOptions): AuthFlowViewModel {
   const { busyAction, isCheckingAuthorizationReturn, sessionId, statusData } = options
   const status = statusData?.status || 'created'
   const verificationURL = statusData?.verification_url
-  const reusedAppConfig = reusedAuthorizationConfig(statusData)
+  const appConfigRequired = statusData?.app_config_required ?? true
   const reachedStepTwo = reachedAuthorizationStepTwo(statusData)
 
   if (status === 'authenticated') {
@@ -67,8 +70,7 @@ export function buildAuthFlowViewModel(options: AuthFlowViewModelOptions): AuthF
       primaryDisabled: busyAction === 'analyze',
       showReset: true,
       steps: buildSteps({
-        firstStepState: 'done',
-        firstStepReused: reusedAppConfig,
+        firstStepState: appConfigRequired ? 'done' : 'preconfigured',
         secondStepState: 'done',
       }),
     }
@@ -106,8 +108,7 @@ export function buildAuthFlowViewModel(options: AuthFlowViewModelOptions): AuthF
         primaryDisabled: true,
         showReset: true,
         steps: buildSteps({
-          firstStepState: 'done',
-          firstStepReused: reusedAppConfig,
+          firstStepState: appConfigRequired ? 'done' : 'preconfigured',
           secondStepState: 'active',
           secondStepDescription: RETURN_CHECK_STEP_COPY,
           secondStepBadge: '确认中',
@@ -116,11 +117,11 @@ export function buildAuthFlowViewModel(options: AuthFlowViewModelOptions): AuthF
     }
 
     return {
-      phase: reusedAppConfig ? 'login_pending_reused' : 'login_pending',
+      phase: appConfigRequired ? 'login_pending' : 'login_pending_preconfigured',
       eyebrow: '当前处于第 2 步',
       title: verificationURL ? '第二步：完成飞书授权' : '第二步：等待授权完成',
-      description: reusedAppConfig
-        ? '已复用现有飞书应用配置，本次只需完成飞书授权。'
+      description: !appConfigRequired
+        ? PRECONFIGURED_LOGIN_HINT
         : verificationURL
           ? '飞书应用配置已完成，当前只差浏览器中的授权确认。授权成功后系统会自动刷新当前状态。'
           : '飞书应用配置已完成，授权链接已创建，请在新窗口中完成飞书确认。',
@@ -131,8 +132,7 @@ export function buildAuthFlowViewModel(options: AuthFlowViewModelOptions): AuthF
       primaryDisabled: busyAction === 'login',
       showReset: true,
       steps: buildSteps({
-        firstStepState: 'done',
-        firstStepReused: reusedAppConfig,
+        firstStepState: appConfigRequired ? 'done' : 'preconfigured',
         secondStepState: 'active',
       }),
     }
@@ -160,57 +160,50 @@ export function buildAuthFlowViewModel(options: AuthFlowViewModelOptions): AuthF
       primaryDisabled: busyAction === 'login',
       showReset: true,
       steps: buildSteps({
-        firstStepState: failedStepTwo ? 'done' : 'failed',
-        firstStepReused: reusedAppConfig && failedStepTwo,
+        firstStepState: failedStepTwo ? (appConfigRequired ? 'done' : 'preconfigured') : 'failed',
         secondStepState: failedStepTwo ? 'failed' : 'pending',
       }),
     }
   }
 
   return {
-    phase: 'created',
+    phase: appConfigRequired ? 'created' : 'created_preconfigured',
     eyebrow: 'Privacy First',
     title: '连接飞书',
     description: sessionId
       ? `本地会话 ${sessionId.slice(0, 8)} 已创建。连接后即可拉取只读范围内的协作数据。`
       : '将基于本地飞书数据生成工作人格画像，所有信息只在当前设备中处理。',
-    weakHint: CREATED_REUSE_HINT,
+    weakHint: appConfigRequired ? undefined : PRECONFIGURED_CREATED_HINT,
     icon: '◎',
     primaryLabel: busyAction === 'login' ? '正在准备授权...' : '连接我的飞书',
     primaryAction: 'connect',
     primaryDisabled: busyAction === 'login',
     showReset: false,
     steps: buildSteps({
-      firstStepState: 'pending',
+      firstStepState: appConfigRequired ? 'pending' : 'preconfigured',
       secondStepState: 'pending',
     }),
   }
 }
 
 function buildSteps(options: {
-  firstStepState: AuthStepState
-  firstStepReused?: boolean
+  firstStepState: AuthStepState | 'preconfigured'
   secondStepBadge?: string
   secondStepDescription?: string
   secondStepState: AuthStepState
 }): AuthStepViewModel[] {
-  const {
-    firstStepState,
-    firstStepReused = false,
-    secondStepBadge,
-    secondStepDescription,
-    secondStepState,
-  } = options
+  const { firstStepState, secondStepBadge, secondStepDescription, secondStepState } = options
 
   return [
     {
       number: 1,
       title: '飞书应用配置',
-      description: firstStepReused
-        ? '已复用现有飞书应用配置，本次无需重新完成这一步。'
-        : '完成应用配置后，才能继续进行飞书授权。',
-      state: firstStepState,
-      badge: stepBadge(firstStepState, firstStepReused),
+      description:
+        firstStepState === 'preconfigured'
+          ? PRECONFIGURED_STEP_COPY
+          : '完成应用配置后，才能继续进行飞书授权。',
+      state: firstStepState === 'preconfigured' ? 'done' : firstStepState,
+      badge: stepBadge(firstStepState),
     },
     {
       number: 2,
@@ -230,18 +223,12 @@ function reachedAuthorizationStepTwo(statusData: SessionStatusResponse | null) {
   return (statusData?.events || []).some((event) => reachedStepTwoEvent(event.stage))
 }
 
-function reusedAuthorizationConfig(statusData: SessionStatusResponse | null) {
-  const status = statusData?.status || 'created'
-  if (!reachedStepTwoEvent(status)) {
-    return false
-  }
-  return !(statusData?.events || []).some((event) => event.stage === 'config_pending')
-}
-
-function stepBadge(state: AuthStepState, reused = false) {
+function stepBadge(state: AuthStepState | 'preconfigured') {
   switch (state) {
+    case 'preconfigured':
+      return '已预置'
     case 'done':
-      return reused ? '已复用' : '已完成'
+      return '已完成'
     case 'active':
       return '进行中'
     case 'failed':

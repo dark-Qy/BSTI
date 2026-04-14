@@ -148,7 +148,8 @@ func TestStatusIncludesProgressEventsAndNextAction(t *testing.T) {
 	}
 
 	var resp struct {
-		Progress struct {
+		AppConfigRequired bool `json:"app_config_required"`
+		Progress          struct {
 			Stage   string `json:"stage"`
 			Label   string `json:"label"`
 			Percent int    `json:"percent"`
@@ -169,6 +170,44 @@ func TestStatusIncludesProgressEventsAndNextAction(t *testing.T) {
 	}
 	if resp.NextAction != "connect_feishu" {
 		t.Fatalf("next_action = %q", resp.NextAction)
+	}
+	if !resp.AppConfigRequired {
+		t.Fatal("app_config_required = false, want true when server credentials are missing")
+	}
+}
+
+func TestStatusReportsAppConfigNotRequiredWhenServerCredentialsExist(t *testing.T) {
+	store := session.NewFileStore(t.TempDir())
+	srv := New(ServerConfig{
+		App: config.Config{
+			Feishu: config.FeishuConfig{
+				AppID:     "cli_fake",
+				AppSecret: "fake-secret",
+			},
+		},
+		Store: store,
+	})
+
+	item, err := store.Create()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/sessions/"+item.ID+"/status", nil)
+	w := httptest.NewRecorder()
+	srv.Router().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status code = %d body=%s", w.Code, w.Body.String())
+	}
+
+	var resp struct {
+		AppConfigRequired bool `json:"app_config_required"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	if resp.AppConfigRequired {
+		t.Fatal("app_config_required = true, want false when server credentials are configured")
 	}
 }
 
@@ -385,49 +424,6 @@ func TestServerSkipsOAuthWhenStoredTokenNeedsRefresh(t *testing.T) {
 	testServerSkipsOAuthForTokenStatus(t, "needs_refresh")
 }
 
-func TestServerReusesStableProfileWhenCredentialsAreMissing(t *testing.T) {
-	dataDir := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(dataDir, "lark-cli"), 0700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(dataDir, "lark-cli", "config.json"), []byte(`{"apps":[{"appId":"cli_fake","appSecret":"fake","brand":"feishu","users":[{"userOpenId":"ou_fake","userName":"Fake User"}]}]}`), 0600); err != nil {
-		t.Fatal(err)
-	}
-	store := session.NewFileStore(dataDir)
-	srv := New(ServerConfig{
-		App: config.Config{
-			AgentDataDir: dataDir,
-			LarkCLIBin:   os.Args[0],
-		},
-		Store: store,
-	})
-	t.Setenv("FAKE_LARK_CLI_SERVER", "1")
-	t.Setenv("FAKE_AUTH_STATUS", "valid")
-	t.Setenv("FAKE_AUTH_LOGIN_FAIL", "1")
-
-	req := httptest.NewRequest(http.MethodPost, "/api/sessions", nil)
-	w := httptest.NewRecorder()
-	srv.Router().ServeHTTP(w, req)
-	var created map[string]string
-	if err := json.Unmarshal(w.Body.Bytes(), &created); err != nil {
-		t.Fatal(err)
-	}
-
-	req = httptest.NewRequest(http.MethodPost, "/api/sessions/"+created["session_id"]+"/login", nil)
-	w = httptest.NewRecorder()
-	srv.Router().ServeHTTP(w, req)
-	if w.Code != http.StatusOK {
-		t.Fatalf("login status = %d body=%s", w.Code, w.Body.String())
-	}
-	loaded, err := store.Get(created["session_id"])
-	if err != nil {
-		t.Fatal(err)
-	}
-	if loaded.Status != session.StatusAuthenticated {
-		t.Fatalf("status = %q, want authenticated", loaded.Status)
-	}
-}
-
 func testServerSkipsOAuthForTokenStatus(t *testing.T, tokenStatus string) {
 	t.Helper()
 	dataDir := t.TempDir()
@@ -481,15 +477,8 @@ func TestServerFallsBackToOAuthWhenStoredTokenIsMissing(t *testing.T) {
 	testServerFallsBackToOAuthForTokenStatus(t, "")
 }
 
-func TestServerReusesSeededAppConfigForOAuthWithoutReturningToConfigStep(t *testing.T) {
+func TestServerDoesNotReuseAnotherSessionsAppConfig(t *testing.T) {
 	dataDir := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(dataDir, "lark-cli"), 0700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(dataDir, "lark-cli", "config.json"), []byte(`{"apps":[{"appId":"cli_fake","appSecret":"fake","brand":"feishu"}]}`), 0600); err != nil {
-		t.Fatal(err)
-	}
-
 	store := session.NewFileStore(dataDir)
 	srv := New(ServerConfig{
 		App: config.Config{
@@ -499,30 +488,53 @@ func TestServerReusesSeededAppConfigForOAuthWithoutReturningToConfigStep(t *test
 		Store: store,
 	})
 	t.Setenv("FAKE_LARK_CLI_SERVER", "1")
-	t.Setenv("FAKE_AUTH_URL", "https://auth.example/verify")
 	t.Setenv("FAKE_CONFIG_URL", "https://config.example/page/cli")
+	t.Setenv("FAKE_AUTH_URL", "https://auth.example/verify")
 
 	req := httptest.NewRequest(http.MethodPost, "/api/sessions", nil)
 	w := httptest.NewRecorder()
 	srv.Router().ServeHTTP(w, req)
-	var created map[string]string
-	if err := json.Unmarshal(w.Body.Bytes(), &created); err != nil {
+	var createdA map[string]string
+	if err := json.Unmarshal(w.Body.Bytes(), &createdA); err != nil {
 		t.Fatal(err)
 	}
 
-	req = httptest.NewRequest(http.MethodPost, "/api/sessions/"+created["session_id"]+"/login", nil)
+	req = httptest.NewRequest(http.MethodPost, "/api/sessions/"+createdA["session_id"]+"/login", nil)
 	w = httptest.NewRecorder()
 	srv.Router().ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
-		t.Fatalf("login status = %d body=%s", w.Code, w.Body.String())
+		t.Fatalf("session A login status = %d body=%s", w.Code, w.Body.String())
 	}
 
-	var login map[string]string
-	if err := json.Unmarshal(w.Body.Bytes(), &login); err != nil {
+	var loginA map[string]string
+	if err := json.Unmarshal(w.Body.Bytes(), &loginA); err != nil {
 		t.Fatal(err)
 	}
-	if login["verification_url"] != "https://auth.example/verify" {
-		t.Fatalf("verification_url = %q", login["verification_url"])
+	if loginA["verification_url"] != "https://config.example/page/cli" {
+		t.Fatalf("session A verification_url = %q", loginA["verification_url"])
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/api/sessions", nil)
+	w = httptest.NewRecorder()
+	srv.Router().ServeHTTP(w, req)
+	var createdB map[string]string
+	if err := json.Unmarshal(w.Body.Bytes(), &createdB); err != nil {
+		t.Fatal(err)
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/api/sessions/"+createdB["session_id"]+"/login", nil)
+	w = httptest.NewRecorder()
+	srv.Router().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("session B login status = %d body=%s", w.Code, w.Body.String())
+	}
+
+	var loginB map[string]string
+	if err := json.Unmarshal(w.Body.Bytes(), &loginB); err != nil {
+		t.Fatal(err)
+	}
+	if loginB["verification_url"] != "https://config.example/page/cli" {
+		t.Fatalf("session B verification_url = %q", loginB["verification_url"])
 	}
 }
 
@@ -621,40 +633,6 @@ func TestServerDoesNotReuseAnotherSessionsToken(t *testing.T) {
 	}
 	if login["verification_url"] != "https://auth.example/verify" {
 		t.Fatalf("verification_url = %q", login["verification_url"])
-	}
-}
-
-func TestSanitizeCLIConfigRemovesUserTokens(t *testing.T) {
-	raw := []byte(`{
-	  "apps": [{
-	    "appId": "cli_fake",
-	    "appSecret": {"path": "app_secret"},
-	    "brand": "feishu",
-	    "users": [{
-	      "identity": "user",
-	      "accessToken": "access",
-	      "refreshToken": "refresh",
-	      "tokenStatus": "valid"
-	    }]
-	  }],
-	  "identity": "user",
-	  "tokenStatus": "valid"
-	}`)
-
-	sanitized, err := sanitizeCLIConfig(raw)
-	if err != nil {
-		t.Fatal(err)
-	}
-	text := string(sanitized)
-	for _, deny := range []string{"accessToken", "refreshToken", `"identity":"user"`, `"tokenStatus":"valid"`, `"users"`} {
-		if strings.Contains(text, deny) {
-			t.Fatalf("sanitized config leaks %q: %s", deny, text)
-		}
-	}
-	for _, want := range []string{`"appId":"cli_fake"`, `"brand":"feishu"`} {
-		if !strings.Contains(text, want) {
-			t.Fatalf("sanitized config missing %q: %s", want, text)
-		}
 	}
 }
 

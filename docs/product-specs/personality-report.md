@@ -1,6 +1,6 @@
 # Personality Report Product Spec
 
-Users open the local web page, configure a Feishu app if the service has not been preconfigured, authorize Feishu access, and request analysis. The product flow is divided into three UI stages:
+Users open the local web page, configure a Feishu app if the service has not been preconfigured, authorize Feishu access, and request analysis. Session-local app setup is never reused across sessions; only service-side `LARK_APP_ID` and `LARK_APP_SECRET` can skip the first step. The product flow is divided into three UI stages:
 
 - Landing & Auth
 - Analysis & Loading
@@ -36,7 +36,7 @@ For deployed environments, the same HTTP service also exposes `GET /healthz` wit
 
 The frontend also relies on:
 
-- `GET /api/sessions/{id}/status` additive fields `progress`, `events`, and `next_action`
+- `GET /api/sessions/{id}/status` additive fields `progress`, `events`, `next_action`, and `app_config_required` so the landing page can distinguish manual two-step auth from service-preconfigured auth
 - `GET /api/sessions/{id}/report-data` structured report JSON
 
 ## Persona Shorthand
