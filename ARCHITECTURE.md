@@ -7,7 +7,7 @@ The agent is a local Gin HTTP service with four boundaries:
 - Sandbox executor: process-level isolation around `lark-cli`, with an allowlist, per-session working directory, and per-session `LARKSUITE_CLI_CONFIG_DIR`.
 - Analysis pipeline: read-only Feishu collection, raw session-private logs, BSPI persona prompt construction, provider-specific LLM chat classification through a unified `LLM_*` configuration, and local report generation.
 
-The service keeps a shared local `lark-cli` app template at `data/lark-cli/` and seeds each session sandbox from it. The shared template only contains app-level configuration; each session keeps its own `lark-cli` user token inside that session's private config directory, so one user's authorization is not reused across sessions.
+Each session owns a private `lark-cli` config directory and keeps both app setup output and user authorization inside that sandbox. The server never seeds a new session from another session's app configuration. Only service-side `LARK_APP_ID` and `LARK_APP_SECRET` allow the login flow to skip the manual app setup step.
 
 For BOE deployment, SCM packages the service as a Linux binary plus repo-owned runtime assets under `output/`. TCE starts the packaged app through `bootstrap.sh`, which sets deployment-friendly defaults for `HTTP_ADDR` and `AGENT_DATA_DIR`, then launches the binary from the packaged root so relative static assets such as `photos/` and `web/dist/` continue to resolve correctly.
 
@@ -37,7 +37,7 @@ The HTTP surface includes a lightweight `GET /healthz` endpoint that returns `20
 
 The HTTP surface now includes:
 
-- `GET /api/sessions/{id}/status` with additive `progress`, `events`, and `next_action` fields
+- `GET /api/sessions/{id}/status` with additive `progress`, `events`, `next_action`, and `app_config_required` fields
 - `GET /api/sessions/{id}/report-data` for the React frontend
 - `GET /api/sessions/{id}/report` as a compatibility HTML fallback
 
@@ -49,4 +49,4 @@ The sandbox command allowlist only permits:
 - `lark-cli config init --new`
 - read-only shortcuts for `im`, `docs`, `calendar`, `task`, `mail`, and `vc`
 
-If the current session profile already has a valid or refreshable user token according to `lark-cli auth status`, the session becomes authenticated without starting a new OAuth flow. The server does not reuse user tokens from any other session. If `LARK_APP_ID` and `LARK_APP_SECRET` are present and no shared app template is available, the server writes a per-session CLI config with a file-backed app secret. If they are absent, the server runs `lark-cli config init --new`, returns the app setup URL, waits for it to complete, sanitizes the resulting config down to an app-only template, and then starts the normal OAuth device login. The setup process uses a service-owned timeout context after the URL is returned, so finishing the HTTP request that delivered the setup link does not kill the in-progress CLI login flow.
+If the current session profile already has a valid or refreshable user token according to `lark-cli auth status`, the session becomes authenticated without starting a new OAuth flow. The server does not reuse user tokens or app configuration from any other session. If `LARK_APP_ID` and `LARK_APP_SECRET` are present, the server writes a per-session CLI config with a file-backed app secret and starts the normal OAuth device login immediately. If they are absent, the server always runs `lark-cli config init --new`, returns the app setup URL, waits for it to complete inside the current session sandbox, and then starts the normal OAuth device login. The setup process uses a service-owned timeout context after the URL is returned, so finishing the HTTP request that delivered the setup link does not kill the in-progress CLI login flow.

@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
 	"os"
 	"os/exec"
@@ -124,15 +123,16 @@ func (s *Server) status(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{
-		"session_id":       item.ID,
-		"status":           item.Status,
-		"verification_url": item.VerificationURL,
-		"error":            item.Error,
-		"report_ready":     item.ReportHTML != "",
-		"primary_persona":  primaryPersonaSummary(item),
-		"progress":         progressForStatus(item.Status),
-		"events":           item.Events,
-		"next_action":      nextActionForStatus(item.Status),
+		"session_id":          item.ID,
+		"status":              item.Status,
+		"verification_url":    item.VerificationURL,
+		"error":               item.Error,
+		"report_ready":        item.ReportHTML != "",
+		"primary_persona":     primaryPersonaSummary(item),
+		"progress":            progressForStatus(item.Status),
+		"events":              item.Events,
+		"next_action":         nextActionForStatus(item.Status),
+		"app_config_required": s.appConfigRequired(),
 	})
 }
 
@@ -204,74 +204,13 @@ func (s *Server) startLogin(ctx context.Context, item *session.Session) (string,
 	if reused {
 		return "", nil
 	}
-	seeded, err := s.seedSessionCLIConfig(item)
-	if err != nil {
-		return "", err
-	}
-	if s.cfg.Feishu.AppID == "" || s.cfg.Feishu.AppSecret == "" {
-		if seeded {
-			return s.startOAuthLogin(ctx, item)
-		}
+	if s.appConfigRequired() {
 		return s.startConfigThenLogin(ctx, item)
 	}
-	if !seeded {
-		if err := writeCLIConfig(item.Dir, s.cfg.Feishu); err != nil {
-			return "", err
-		}
+	if err := writeCLIConfig(item.Dir, s.cfg.Feishu); err != nil {
+		return "", err
 	}
 	return s.startOAuthLogin(ctx, item)
-}
-
-func (s *Server) seedSessionCLIConfig(item *session.Session) (bool, error) {
-	src := filepath.Join(s.sharedCLIConfigDir(item), "config.json")
-	data, err := os.ReadFile(src)
-	if errors.Is(err, os.ErrNotExist) {
-		return false, nil
-	}
-	if err != nil {
-		return false, err
-	}
-	dstDir := sandbox.NewExecutor(s.cfg.LarkCLIBin, item.Dir, 5*time.Minute).ConfigDir()
-	if err := os.MkdirAll(dstDir, 0700); err != nil {
-		return false, err
-	}
-	if err := os.WriteFile(filepath.Join(dstDir, "config.json"), data, 0600); err != nil {
-		return false, err
-	}
-	return true, nil
-}
-
-func (s *Server) persistSessionCLIConfig(item *session.Session) error {
-	src := filepath.Join(sandbox.NewExecutor(s.cfg.LarkCLIBin, item.Dir, 5*time.Minute).ConfigDir(), "config.json")
-	data, err := os.ReadFile(src)
-	if errors.Is(err, os.ErrNotExist) {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	sanitized, err := sanitizeCLIConfig(data)
-	if err != nil {
-		return err
-	}
-	dstDir := s.sharedCLIConfigDir(item)
-	if err := os.MkdirAll(dstDir, 0700); err != nil {
-		return err
-	}
-	return os.WriteFile(filepath.Join(dstDir, "config.json"), sanitized, 0600)
-}
-
-func (s *Server) sharedCLIConfigDir(item *session.Session) string {
-	dataDir := s.cfg.AgentDataDir
-	if dataDir == "" {
-		dataDir = filepath.Dir(filepath.Dir(item.Dir))
-	}
-	if abs, err := filepath.Abs(filepath.Clean(dataDir)); err == nil {
-		dataDir = abs
-	} else {
-		dataDir = filepath.Clean(dataDir)
-	}
-	return filepath.Join(dataDir, "lark-cli")
 }
 
 func (s *Server) tryReuseLogin(ctx context.Context, item *session.Session) (bool, error) {
@@ -295,47 +234,6 @@ func (s *Server) tryReuseLogin(ctx context.Context, item *session.Session) (bool
 	item.DeviceCode = ""
 	item.Error = ""
 	return true, s.store.Save(item)
-}
-
-func sanitizeCLIConfig(raw []byte) ([]byte, error) {
-	var cfg map[string]any
-	if err := json.Unmarshal(raw, &cfg); err != nil {
-		return nil, fmt.Errorf("invalid lark-cli config: %w", err)
-	}
-
-	apps, ok := cfg["apps"].([]any)
-	if !ok || len(apps) == 0 {
-		return nil, errors.New("lark-cli config missing apps")
-	}
-
-	sanitizedApps := make([]map[string]any, 0, len(apps))
-	for _, item := range apps {
-		app, ok := item.(map[string]any)
-		if !ok {
-			continue
-		}
-		sanitizedApp := map[string]any{}
-		for _, key := range []string{"appId", "appSecret", "brand"} {
-			if value, ok := app[key]; ok {
-				sanitizedApp[key] = value
-			}
-		}
-		if len(sanitizedApp) > 0 {
-			sanitizedApps = append(sanitizedApps, sanitizedApp)
-		}
-	}
-	if len(sanitizedApps) == 0 {
-		return nil, errors.New("lark-cli config missing app template")
-	}
-
-	sanitized := map[string]any{
-		"apps": sanitizedApps,
-	}
-	data, err := json.Marshal(sanitized)
-	if err != nil {
-		return nil, err
-	}
-	return data, nil
 }
 
 func (s *Server) startConfigThenLogin(ctx context.Context, item *session.Session) (string, error) {
@@ -413,12 +311,6 @@ func (s *Server) waitConfigThenStartOAuth(cmd *exec.Cmd, cancel context.CancelFu
 	if err != nil {
 		return
 	}
-	if err := s.persistSessionCLIConfig(current); err != nil {
-		recordStatus(current, session.StatusFailed, "保存飞书配置失败")
-		current.Error = err.Error()
-		_ = s.store.Save(current)
-		return
-	}
 	if _, err := s.startOAuthLogin(context.Background(), current); err != nil {
 		recordStatus(current, session.StatusFailed, "启动飞书授权失败")
 		current.Error = err.Error()
@@ -458,14 +350,14 @@ func (s *Server) startOAuthLogin(ctx context.Context, item *session.Session) (st
 		} else {
 			recordStatus(current, session.StatusAuthenticated, "飞书授权完成")
 			current.Error = ""
-			if err := s.persistSessionCLIConfig(current); err != nil {
-				recordStatus(current, session.StatusFailed, "保存飞书登录态失败")
-				current.Error = err.Error()
-			}
 		}
 		_ = s.store.Save(current)
 	}()
 	return resp.VerificationURL, nil
+}
+
+func (s *Server) appConfigRequired() bool {
+	return s.cfg.Feishu.AppID == "" || s.cfg.Feishu.AppSecret == ""
 }
 
 func (s *Server) runAnalysis(ctx context.Context, item *session.Session) error {

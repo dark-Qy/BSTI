@@ -1,6 +1,6 @@
 # Personality Agent Design
 
-The first version supports both service-side Feishu app credentials and automatic app setup through `lark-cli config init --new`. Each user session receives an isolated local config directory and can only execute approved `lark-cli` read commands.
+The first version supports both service-side Feishu app credentials and automatic app setup through `lark-cli config init --new`. Each user session receives an isolated local config directory, never reuses another session's app setup, and can only execute approved `lark-cli` read commands.
 
 The analysis window defaults to the last 30 days. Collection covers chat messages, docs, calendar events, tasks, mail, and meeting notes when permissions allow. Domain failures are treated as partial failures and are included in the final report context.
 
@@ -32,6 +32,6 @@ The structured analysis JSON now includes:
 
 For the first BOE deployment, the service stays as a Gin HTTP application rather than moving to Kitex. SCM builds a Linux binary and packages it with `photos/`, `web/dist/`, and a repo-owned `bootstrap.sh`. TCE is expected to inject the required `LLM_*` variables plus optional Feishu secrets such as `LARK_APP_ID` and `LARK_APP_SECRET` through runtime environment variables, while `bootstrap.sh` defaults the bind address to `0.0.0.0:8787` and the writable data directory to the packaged `data/` path.
 
-The HTTP service continues to keep `GET /api/sessions/{id}/report` as a compatibility HTML fallback, while the React frontend consumes the new `GET /api/sessions/{id}/report-data` endpoint plus additive status fields `progress`, `events`, and `next_action`.
+The HTTP service continues to keep `GET /api/sessions/{id}/report` as a compatibility HTML fallback, while the React frontend consumes the new `GET /api/sessions/{id}/report-data` endpoint plus additive status fields `progress`, `events`, `next_action`, and `app_config_required`.
 
 The deployed service exposes `GET /healthz` as a process-level health endpoint. It is intentionally shallow and only confirms that the HTTP server is up, which keeps it safe for liveness and readiness checks during the first single-instance BOE rollout.

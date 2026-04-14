@@ -74,6 +74,7 @@ export interface ReportData {
 export interface SessionStatusResponse {
   session_id: string
   status: SessionStatus
+  app_config_required: boolean
   verification_url?: string
   error?: string
   report_ready: boolean

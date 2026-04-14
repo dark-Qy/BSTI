@@ -37,6 +37,7 @@ describe('App', () => {
         return jsonResponse({
           session_id: 'session-1',
           status: 'created',
+          app_config_required: true,
           report_ready: false,
           progress: { stage: 'created', label: '等待连接飞书', percent: 5 },
           events: [{ stage: 'created', label: 'Session created', percent: 5, timestamp: '2026-04-11T14:00:00Z' }],
@@ -52,9 +53,36 @@ describe('App', () => {
     expect(await screen.findByText('洞悉你的工作。')).toBeInTheDocument()
     expect(screen.getByText('重塑你的人格。')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '连接我的飞书' })).toBeInTheDocument()
-    expect(screen.getByText('若已存在可复用的飞书应用配置，将自动跳过第一步配置。')).toBeInTheDocument()
+    expect(screen.queryByText('若已存在可复用的飞书应用配置，将自动跳过第一步配置。')).not.toBeInTheDocument()
     expect(screen.queryByText('主界面阶段')).not.toBeInTheDocument()
     expect(screen.queryByText('Connection Flow')).not.toBeInTheDocument()
+  })
+
+  it('shows the preconfigured-app hint when server credentials skip the first step', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      const url = String(input)
+      if (url.endsWith('/api/sessions')) {
+        return jsonResponse({ session_id: 'session-preconfigured', status: 'created' })
+      }
+      if (url.endsWith('/api/sessions/session-preconfigured/status')) {
+        return jsonResponse({
+          session_id: 'session-preconfigured',
+          status: 'created',
+          app_config_required: false,
+          report_ready: false,
+          progress: { stage: 'created', label: '等待连接飞书', percent: 5 },
+          events: [{ stage: 'created', label: 'Session created', percent: 5, timestamp: '2026-04-11T14:00:00Z' }],
+          next_action: 'connect_feishu',
+        })
+      }
+      throw new Error(`Unhandled fetch: ${url}`)
+    })
+
+    render(<App />)
+
+    expect(await screen.findByText('连接飞书')).toBeInTheDocument()
+    expect(screen.getByText('服务端已预置飞书应用配置，本次将直接进入飞书授权。')).toBeInTheDocument()
+    expect(screen.getByText('已预置')).toBeInTheDocument()
   })
 
   it('makes the second authorization step visually distinct after config is complete', async () => {
@@ -69,6 +97,7 @@ describe('App', () => {
         return jsonResponse({
           session_id: 'session-login',
           status: 'login_pending',
+          app_config_required: true,
           verification_url: 'https://verify.example',
           report_ready: false,
           progress: { stage: 'login_pending', label: '等待完成飞书授权', percent: 32 },
@@ -125,6 +154,7 @@ describe('App', () => {
         return jsonResponse({
           session_id: 'session-config',
           status: 'config_pending',
+          app_config_required: true,
           verification_url: 'https://config.example',
           report_ready: false,
           progress: { stage: 'config_pending', label: '等待完成飞书应用配置', percent: 20 },
@@ -162,17 +192,18 @@ describe('App', () => {
     expect(loginCalls).toBe(0)
   })
 
-  it('explains when the app configuration step was reused before entering authorization', async () => {
+  it('shows the preconfigured first step when server credentials skip configuration', async () => {
     vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
       const url = String(input)
       if (url.endsWith('/api/sessions')) {
-        return jsonResponse({ session_id: 'session-reused', status: 'created' })
+        return jsonResponse({ session_id: 'session-preconfigured-login', status: 'created' })
       }
-      if (url.endsWith('/api/sessions/session-reused/status')) {
+      if (url.endsWith('/api/sessions/session-preconfigured-login/status')) {
         return jsonResponse({
-          session_id: 'session-reused',
+          session_id: 'session-preconfigured-login',
           status: 'login_pending',
-          verification_url: 'https://verify.example/reused',
+          app_config_required: false,
+          verification_url: 'https://verify.example/preconfigured',
           report_ready: false,
           progress: { stage: 'login_pending', label: '等待完成飞书授权', percent: 32 },
           events: [
@@ -188,8 +219,8 @@ describe('App', () => {
     render(<App />)
 
     expect(await screen.findByText('第二步：完成飞书授权')).toBeInTheDocument()
-    expect(screen.getByText('已复用现有飞书应用配置，本次只需完成飞书授权。')).toBeInTheDocument()
-    expect(screen.getByText('已复用')).toBeInTheDocument()
+    expect(screen.getByText('服务端已预置飞书应用配置，本次只需完成飞书授权。')).toBeInTheDocument()
+    expect(screen.getByText('已预置')).toBeInTheDocument()
   })
 
   it('switches to a return-checking state after browser auth resumes and then auto-upgrades to ready', async () => {
@@ -210,9 +241,10 @@ describe('App', () => {
         statusCalls += 1
         if (statusCalls === 1) {
           return jsonResponse({
-            session_id: 'session-return',
-            status: 'created',
-            report_ready: false,
+          session_id: 'session-return',
+          status: 'created',
+          app_config_required: true,
+          report_ready: false,
             progress: { stage: 'created', label: '等待连接飞书', percent: 5 },
             events: [{ stage: 'created', label: 'Session created', percent: 5, timestamp: '2026-04-14T11:00:00Z' }],
             next_action: 'connect_feishu',
@@ -222,6 +254,7 @@ describe('App', () => {
           return jsonResponse({
             session_id: 'session-return',
             status: 'login_pending',
+            app_config_required: true,
             verification_url: 'https://verify.example/return',
             report_ready: false,
             progress: { stage: 'login_pending', label: '等待完成飞书授权', percent: 32 },
@@ -235,6 +268,7 @@ describe('App', () => {
         return jsonResponse({
           session_id: 'session-return',
           status: 'authenticated',
+          app_config_required: true,
           report_ready: false,
           progress: { stage: 'authenticated', label: '授权完成，准备开始分析', percent: 45 },
           events: [
@@ -294,6 +328,7 @@ describe('App', () => {
         return jsonResponse({
           session_id: 'session-2',
           status: 'collecting',
+          app_config_required: true,
           report_ready: false,
           progress: { stage: 'collecting', label: '正在采集授权范围内的飞书数据', percent: 66 },
           events: [
@@ -329,6 +364,7 @@ describe('App', () => {
         return jsonResponse({
           session_id: 'session-3',
           status: 'done',
+          app_config_required: true,
           report_ready: true,
           progress: { stage: 'done', label: '报告已生成', percent: 100 },
           events: [{ stage: 'done', label: '报告已生成，可以查看结果', percent: 100, timestamp: '2026-04-11T14:02:00Z' }],
@@ -424,6 +460,7 @@ describe('App', () => {
         return jsonResponse({
           session_id: 'session-4',
           status: 'done',
+          app_config_required: true,
           report_ready: true,
           progress: { stage: 'done', label: '报告已生成', percent: 100 },
           events: [{ stage: 'done', label: '报告已生成，可以查看结果', percent: 100, timestamp: '2026-04-12T09:02:00Z' }],
