@@ -6,11 +6,18 @@ Users open the local web page, configure a Feishu app if the service has not bee
 - Analysis & Loading
 - Result & Persona Report
 
+The frontend should preserve the current local `session_id` in browser `localStorage` so refreshing or reopening the same browser can continue the authorized flow without reauthorizing. This stored value is only a session reference; the real Feishu login state remains inside the server-side session directory. Different browsers and browser profiles are isolated naturally, while a shared browser must expose an explicit "切换账号 / 新建会话" entry so a second user can discard the previous local session reference.
+
 The result page renders from structured JSON and presents:
 
 - a single BSPI Top1 persona with image
 - 2-4 highlight tags
-- four fixed behavior vectors
+- six fixed behavior vectors
+- a `工作画像` module
+- an `表达指纹` module
+- a `知识信号` module
+- an interaction insights module with relationship summary, core collaborators, frequent people, and frequent chats
+- contrast signals when the model finds cross-domain contradictions or notable behavior contrast
 - official persona definition
 - evidence-based individual summary
 - evidence-based observations
@@ -23,7 +30,32 @@ The result page renders from structured JSON and presents:
 
 The report generation backend is configured through `LLM_PROVIDER`, `LLM_API_URL`, `LLM_API_KEY`, `LLM_MODEL`, and `LLM_MAX_TOKENS`. Users explicitly choose `modelhub` or `kimi`; the product does not auto-detect provider type from the URL and allows custom compatible gateway URLs.
 
-The four behavior vectors are fixed and must stay stable across reports:
+Authorization now requests one-time read-only chat coverage broad enough for:
+
+- cross-chat message search
+- direct-message history reads
+- group chat history reads
+- chat metadata lookup
+
+Chat-derived interaction insights should be built from the user's own messages rather than all visible traffic. The product should:
+
+- search for messages authored by the authenticated user
+- filter obvious non-work groups with local heuristics before ranking
+- extract compact causal-chain context around the user's own messages by paginating `+chat-messages-list` with returned page tokens
+- for P2P, keep the most recent non-noisy counterpart trigger message block before each user reply
+- for groups, keep one recent non-noisy topic anchor and inline role markers such as `[群发起话题]`, `[回应他人]`, and `[被@后回复]`
+- prioritize P2P when identifying core collaborators, while keeping groups as supplemental coordination evidence
+- hide internal identifiers such as `open_id` and `chat_id` from final JSON/HTML/Markdown report outputs
+- keep `frequent_chats` limited to group-chat findings rather than single-chat summaries or direct-message evidence
+
+Document collection now prioritizes:
+
+1. current-user-created docs, capped at 10 and filtered with `creator_ids=[current user open_id]`
+2. recently browsed docs, capped at 20
+
+The two inputs are merged and deduplicated for reference display, while bounded body reads now target the first 10 current-user-created documents. Before the final analysis call, `chat` is cleaned into a filtered raw JSON block plus lightweight chat stats, `docs` / `docs_content` / `task` are passed through as raw JSON, and `calendar`, `vc` / `vc_notes`, and filtered `mail` / `mail_content` also remain JSON blocks with their original top-level wrapper but slimmer field sets. Prompt-time slimming removes internal identifiers, jump links, avatars, CLI update notices, log IDs, thread IDs, and similar noise while keeping the human-readable content unchanged. Raw session logs still preserve the original CLI responses. When both chat and docs are available, docs should contribute more strongly to stable work-pattern, writing-style, and knowledge-signal analysis.
+
+The six behavior vectors are fixed and must stay stable across reports:
 
 | Label | Left Pole | Right Pole |
 | --- | --- | --- |
@@ -31,6 +63,8 @@ The four behavior vectors are fixed and must stay stable across reports:
 | 表达风格 | 克制压缩 | 高频输出 |
 | 决策路径 | 证据校准 | 直觉快判 |
 | 推进节奏 | 稳态推进 | 高压突进 |
+| 信息处理 | 深度聚焦 | 广度扫描 |
+| 风险态度 | 防御优先 | 进攻优先 |
 
 For deployed environments, the same HTTP service also exposes `GET /healthz` with a lightweight `{"status":"ok"}` response so BOE/TCE can confirm the process is ready before routing traffic.
 
@@ -38,6 +72,26 @@ The frontend also relies on:
 
 - `GET /api/sessions/{id}/status` additive fields `progress`, `events`, `next_action`, and `app_config_required` so the landing page can distinguish manual two-step auth from service-preconfigured auth
 - `GET /api/sessions/{id}/report-data` structured report JSON
+
+Frontend restore behavior should be:
+
+- restore the persisted `session_id` first when present
+- auto-create a new session only if that restore returns `404`
+- keep non-404 restore failures visible instead of silently resetting the flow
+
+Failure handling should follow explicit backend status values instead of inferring cause from the current UI step:
+
+- `auth_failed`: show an authorization failure state and guide the user back into setup or Feishu authorization
+- `analysis_failed`: show an analysis failure state that explains authorization already succeeded and offers direct retry without reauthorizing
+- legacy `failed`: continue to render as a generic authorization-style failure for backward compatibility
+
+The `report-data` payload now also carries these portrait blocks:
+
+- `work_profile`
+- `expression_fingerprint`
+- `output_style`
+- `knowledge_signals`
+- `contrast_signals`
 
 ## Persona Shorthand
 

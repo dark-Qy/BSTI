@@ -8,7 +8,11 @@ import (
 	"strings"
 )
 
-const defaultLLMMaxTokens = 5000
+const (
+	defaultLLMMaxTokens  = 5000
+	defaultAgentDataDir  = "/tmp/byte-agent-data"
+	defaultHTTPAddr      = "0.0.0.0:8787"
+)
 
 type Provider string
 
@@ -62,25 +66,29 @@ func Load(path string) (Config, error) {
 		return Config{}, err
 	}
 
-	get := func(key, fallback string) string {
-		if value := os.Getenv(key); value != "" {
-			return value
+	get := func(fallback string, keys ...string) string {
+		for _, key := range keys {
+			if value := os.Getenv(key); value != "" {
+				return value
+			}
 		}
-		if value := values[key]; value != "" {
-			return value
+		for _, key := range keys {
+			if value := values[key]; value != "" {
+				return value
+			}
 		}
 		return fallback
 	}
 
-	provider := Provider(strings.ToLower(get("LLM_PROVIDER", "")))
+	provider := Provider(strings.ToLower(get("", "LLM_PROVIDER", "CUSTOM_LLM_PROVIDER")))
 	if provider == "" {
-		return Config{}, fmt.Errorf("missing LLM_PROVIDER in .env")
+		return Config{}, fmt.Errorf("missing LLM_PROVIDER or CUSTOM_LLM_PROVIDER in env or .env")
 	}
 	if provider != ProviderModelHub && provider != ProviderKimi {
 		return Config{}, fmt.Errorf("invalid LLM_PROVIDER %q", provider)
 	}
 
-	maxTokens, err := strconv.Atoi(get("LLM_MAX_TOKENS", "5000"))
+	maxTokens, err := strconv.Atoi(get("5000", "LLM_MAX_TOKENS", "CUSTOM_LLM_MAX_TOKENS"))
 	if err != nil || maxTokens <= 0 {
 		maxTokens = defaultLLMMaxTokens
 	}
@@ -88,17 +96,17 @@ func Load(path string) (Config, error) {
 		maxTokens = defaultLLMMaxTokens
 	}
 
-	apiURL := get("LLM_API_URL", "")
+	apiURL := get("", "LLM_API_URL", "CUSTOM_LLM_API_URL")
 	if apiURL == "" {
-		return Config{}, fmt.Errorf("missing LLM_API_URL in .env")
+		return Config{}, fmt.Errorf("missing LLM_API_URL or CUSTOM_LLM_API_URL in env or .env")
 	}
-	apiKey := get("LLM_API_KEY", "")
+	apiKey := get("", "LLM_API_KEY", "CUSTOM_LLM_API_KEY")
 	if apiKey == "" {
-		return Config{}, fmt.Errorf("missing LLM_API_KEY in .env")
+		return Config{}, fmt.Errorf("missing LLM_API_KEY or CUSTOM_LLM_API_KEY in env or .env")
 	}
-	model := get("LLM_MODEL", "")
+	model := get("", "LLM_MODEL", "CUSTOM_LLM_MODEL")
 	if model == "" {
-		return Config{}, fmt.Errorf("missing LLM_MODEL in .env")
+		return Config{}, fmt.Errorf("missing LLM_MODEL or CUSTOM_LLM_MODEL in env or .env")
 	}
 
 	return Config{
@@ -110,12 +118,12 @@ func Load(path string) (Config, error) {
 			MaxTokens: maxTokens,
 		},
 		Feishu: FeishuConfig{
-			AppID:     get("LARK_APP_ID", ""),
-			AppSecret: get("LARK_APP_SECRET", ""),
+			AppID:     get("", "LARK_APP_ID"),
+			AppSecret: get("", "LARK_APP_SECRET"),
 		},
-		LarkCLIBin:   get("LARK_CLI_BIN", "lark-cli"),
-		AgentDataDir: get("AGENT_DATA_DIR", "./data"),
-		HTTPAddr:     get("HTTP_ADDR", "127.0.0.1:8787"),
+		LarkCLIBin:   get("lark-cli", "LARK_CLI_BIN"),
+		AgentDataDir: get(defaultAgentDataDir, "AGENT_DATA_DIR"),
+		HTTPAddr:     get(defaultHTTPAddr, "HTTP_ADDR"),
 	}, nil
 }
 

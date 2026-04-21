@@ -49,7 +49,7 @@ func (e *Executor) Validate(args []string) error {
 	case "auth":
 		return validateAuth(args)
 	case "im":
-		return requireShortcut(args, "+messages-search")
+		return validateIM(args)
 	case "docs":
 		return requireShortcut(args, "+search", "+fetch")
 	case "calendar":
@@ -60,9 +60,29 @@ func (e *Executor) Validate(args []string) error {
 		return requireShortcut(args, "+triage", "+message")
 	case "vc":
 		return requireShortcut(args, "+search", "+notes")
+	case "contact":
+		return requireShortcut(args, "+get-user")
 	default:
 		return fmt.Errorf("lark-cli command %q is not allowed", args[0])
 	}
+}
+
+func validateIM(args []string) error {
+	if len(args) < 2 {
+		return errors.New("im shortcut is required")
+	}
+	if err := requireShortcut(args, "+messages-search", "+chat-messages-list", "+chat-search"); err == nil {
+		return nil
+	}
+	if len(args) >= 3 {
+		switch {
+		case args[1] == "chat.members" && args[2] == "get":
+			return nil
+		case args[1] == "chats" && args[2] == "get":
+			return nil
+		}
+	}
+	return fmt.Errorf("im shortcut %q is not allowed", args[1])
 }
 
 func validateConfig(args []string) error {

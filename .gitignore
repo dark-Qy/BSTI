@@ -10,3 +10,9 @@ dist/
 output/
 coverage.out
 web/node_modules/
+!web/dist/
+web/dist/*
+!web/dist/.keep
+!web/dist/app-assets/
+web/dist/app-assets/*
+!web/dist/app-assets/.keep

@@ -14,14 +14,16 @@ import (
 type Status string
 
 const (
-	StatusCreated       Status = "created"
-	StatusConfigPending Status = "config_pending"
-	StatusLoginPending  Status = "login_pending"
-	StatusAuthenticated Status = "authenticated"
-	StatusCollecting    Status = "collecting"
-	StatusAnalyzing     Status = "analyzing"
-	StatusDone          Status = "done"
-	StatusFailed        Status = "failed"
+	StatusCreated        Status = "created"
+	StatusConfigPending  Status = "config_pending"
+	StatusLoginPending   Status = "login_pending"
+	StatusAuthenticated  Status = "authenticated"
+	StatusCollecting     Status = "collecting"
+	StatusAnalyzing      Status = "analyzing"
+	StatusDone           Status = "done"
+	StatusAuthFailed     Status = "auth_failed"
+	StatusAnalysisFailed Status = "analysis_failed"
+	StatusFailed         Status = "failed"
 )
 
 type Session struct {

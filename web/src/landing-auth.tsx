@@ -91,7 +91,7 @@ export function LandingPage(props: LandingPageProps) {
 
           {panelState.showReset ? (
             <button className="secondary-button" disabled={busyAction === 'session'} onClick={onReset}>
-              新建会话
+              切换账号 / 新建会话
             </button>
           ) : null}
         </div>

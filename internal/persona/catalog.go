@@ -3,6 +3,7 @@ package persona
 import (
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 )
@@ -28,13 +29,95 @@ type Primary struct {
 }
 
 type Analysis struct {
-	Summary            string   `json:"summary"`
-	Evidence           []string `json:"evidence"`
-	CommunicationStyle string   `json:"communication_style"`
-	WorkPreferences    string   `json:"work_preferences"`
-	BlindSpots         string   `json:"blind_spots"`
-	Confidence         float64  `json:"confidence"`
-	Disclaimer         string   `json:"disclaimer"`
+	Summary            string         `json:"summary"`
+	Evidence           []EvidenceItem `json:"evidence"`
+	CommunicationStyle string         `json:"communication_style"`
+	WorkPreferences    string         `json:"work_preferences"`
+	BlindSpots         string         `json:"blind_spots"`
+	Confidence         float64        `json:"confidence"`
+	Disclaimer         string         `json:"disclaimer"`
+}
+
+type EvidenceItem struct {
+	Domains       []string `json:"domains"`
+	Behavior      string   `json:"behavior"`
+	Strength      string   `json:"strength"`
+	IsCrossDomain bool     `json:"is_cross_domain"`
+	IsDistinctive bool     `json:"is_distinctive"`
+}
+
+type WorkProfile struct {
+	ResponsibilityScope   string   `json:"responsibility_scope"`
+	TypicalWorkflow       string   `json:"typical_workflow"`
+	DocWritingStyle       string   `json:"doc_writing_style"`
+	DecisionMakingPattern string   `json:"decision_making_pattern"`
+	TechStackOrDomain     []string `json:"tech_stack_or_domain"`
+}
+
+type parsedEvidenceItem struct {
+	Domains       flexibleTextList `json:"domains"`
+	Behavior      flexibleText     `json:"behavior"`
+	Strength      flexibleText     `json:"strength"`
+	IsCrossDomain bool             `json:"is_cross_domain"`
+	IsDistinctive bool             `json:"is_distinctive"`
+}
+
+type parsedWorkProfile struct {
+	ResponsibilityScope   flexibleText     `json:"responsibility_scope"`
+	TypicalWorkflow       flexibleText     `json:"typical_workflow"`
+	DocWritingStyle       flexibleText     `json:"doc_writing_style"`
+	DecisionMakingPattern flexibleText     `json:"decision_making_pattern"`
+	TechStackOrDomain     flexibleTextList `json:"tech_stack_or_domain"`
+}
+
+type parsedExpressionFingerprint struct {
+	Catchphrases       flexibleTextList `json:"catchphrases"`
+	Jargon             flexibleTextList `json:"jargon"`
+	SentencePattern    flexibleText     `json:"sentence_pattern"`
+	EmojiHabit         flexibleText     `json:"emoji_habit"`
+	FormalitySpectrum  flexibleText     `json:"formality_spectrum"`
+	ReplySpeedPattern  flexibleText     `json:"reply_speed_pattern"`
+	ConflictExpression flexibleText     `json:"conflict_expression"`
+}
+
+type ExpressionFingerprint struct {
+	Catchphrases       []string `json:"catchphrases"`
+	Jargon             []string `json:"jargon"`
+	SentencePattern    string   `json:"sentence_pattern"`
+	EmojiHabit         string   `json:"emoji_habit"`
+	FormalitySpectrum  string   `json:"formality_spectrum"`
+	ReplySpeedPattern  string   `json:"reply_speed_pattern"`
+	ConflictExpression string   `json:"conflict_expression"`
+}
+
+type OutputStyle struct {
+	DocStructurePreference string `json:"doc_structure_preference"`
+	DetailLevel            string `json:"detail_level"`
+	EmailReplyPattern      string `json:"email_reply_pattern"`
+	ChatReplyPattern       string `json:"chat_reply_pattern"`
+	MeetingBehavior        string `json:"meeting_behavior"`
+}
+
+type parsedOutputStyle struct {
+	DocStructurePreference flexibleText `json:"doc_structure_preference"`
+	DetailLevel            flexibleText `json:"detail_level"`
+	EmailReplyPattern      flexibleText `json:"email_reply_pattern"`
+	ChatReplyPattern       flexibleText `json:"chat_reply_pattern"`
+	MeetingBehavior        flexibleText `json:"meeting_behavior"`
+}
+
+type KnowledgeSignals struct {
+	ExplicitOpinions []string `json:"explicit_opinions"`
+	LearnedLessons   []string `json:"learned_lessons"`
+	RepeatedConcerns []string `json:"repeated_concerns"`
+	ReferenceSources []string `json:"reference_sources"`
+}
+
+type parsedKnowledgeSignals struct {
+	ExplicitOpinions flexibleTextList `json:"explicit_opinions"`
+	LearnedLessons   flexibleTextList `json:"learned_lessons"`
+	RepeatedConcerns flexibleTextList `json:"repeated_concerns"`
+	ReferenceSources flexibleTextList `json:"reference_sources"`
 }
 
 type BehaviorVector struct {
@@ -43,6 +126,20 @@ type BehaviorVector struct {
 	RightPole string `json:"right_pole"`
 	Score     int    `json:"score"`
 	Summary   string `json:"summary"`
+}
+
+type InteractionTarget struct {
+	DisplayName string `json:"display_name"`
+	Identifier  string `json:"identifier,omitempty"`
+	Summary     string `json:"summary"`
+	Evidence    string `json:"evidence"`
+}
+
+type InteractionInsights struct {
+	RelationshipSummary string              `json:"relationship_summary"`
+	CoreCollaborators   []InteractionTarget `json:"core_collaborators"`
+	FrequentPeople      []InteractionTarget `json:"frequent_people"`
+	FrequentChats       []InteractionTarget `json:"frequent_chats"`
 }
 
 type ShareCard struct {
@@ -58,32 +155,192 @@ type Coverage struct {
 	Summary           string   `json:"summary"`
 }
 
+type parsedBehaviorVector struct {
+	Label     flexibleText `json:"label"`
+	LeftPole  flexibleText `json:"left_pole"`
+	RightPole flexibleText `json:"right_pole"`
+	Score     int          `json:"score"`
+	Summary   flexibleText `json:"summary"`
+}
+
 type Result struct {
-	PrimaryPersona  Primary          `json:"primary_persona"`
-	Analysis        Analysis         `json:"analysis"`
-	HighlightTags   []string         `json:"highlight_tags"`
-	BehaviorVectors []BehaviorVector `json:"behavior_vectors"`
-	ShareCard       ShareCard        `json:"share_card"`
-	Coverage        Coverage         `json:"coverage"`
+	PrimaryPersona        Primary               `json:"primary_persona"`
+	Analysis              Analysis              `json:"analysis"`
+	WorkProfile           WorkProfile           `json:"work_profile"`
+	ExpressionFingerprint ExpressionFingerprint `json:"expression_fingerprint"`
+	OutputStyle           OutputStyle           `json:"output_style"`
+	KnowledgeSignals      KnowledgeSignals      `json:"knowledge_signals"`
+	HighlightTags         []string              `json:"highlight_tags"`
+	BehaviorVectors       []BehaviorVector      `json:"behavior_vectors"`
+	InteractionInsights   InteractionInsights   `json:"interaction_insights"`
+	ContrastSignals       []string              `json:"contrast_signals,omitempty"`
+	ShareCard             ShareCard             `json:"share_card"`
+	Coverage              Coverage              `json:"coverage"`
 }
 
 type llmResponse struct {
-	PrimaryPersona     string   `json:"primary_persona"`
-	Summary            string   `json:"summary"`
-	Evidence           []string `json:"evidence"`
-	CommunicationStyle string   `json:"communication_style"`
-	WorkPreferences    string   `json:"work_preferences"`
-	BlindSpots         string   `json:"blind_spots"`
-	HighlightTags      []string `json:"highlight_tags"`
-	BehaviorVectors    []struct {
-		Label     string `json:"label"`
-		LeftPole  string `json:"left_pole"`
-		RightPole string `json:"right_pole"`
-		Score     int    `json:"score"`
-		Summary   string `json:"summary"`
-	} `json:"behavior_vectors"`
-	Confidence         any      `json:"confidence"`
-	Disclaimer         string   `json:"disclaimer"`
+	PrimaryPersona        string                      `json:"primary_persona"`
+	Summary               flexibleText                `json:"summary"`
+	Evidence              []parsedEvidenceItem        `json:"evidence"`
+	WorkProfile           parsedWorkProfile           `json:"work_profile"`
+	ExpressionFingerprint parsedExpressionFingerprint `json:"expression_fingerprint"`
+	OutputStyle           parsedOutputStyle           `json:"output_style"`
+	KnowledgeSignals      parsedKnowledgeSignals      `json:"knowledge_signals"`
+	CommunicationStyle    flexibleText                `json:"communication_style"`
+	WorkPreferences       flexibleText                `json:"work_preferences"`
+	BlindSpots            flexibleText                `json:"blind_spots"`
+	HighlightTags         flexibleTextList            `json:"highlight_tags"`
+	BehaviorVectors       []parsedBehaviorVector      `json:"behavior_vectors"`
+	InteractionInsights   struct {
+		RelationshipSummary flexibleText              `json:"relationship_summary"`
+		CoreCollaborators   []parsedInteractionTarget `json:"core_collaborators"`
+		FrequentPeople      []parsedInteractionTarget `json:"frequent_people"`
+		FrequentChats       []parsedInteractionTarget `json:"frequent_chats"`
+	} `json:"interaction_insights"`
+	ContrastSignals flexibleTextList `json:"contrast_signals"`
+	Confidence      any              `json:"confidence"`
+	Disclaimer      flexibleText     `json:"disclaimer"`
+}
+
+type flexibleEvidence string
+type flexibleText string
+type flexibleTextList []string
+
+type parsedInteractionTarget struct {
+	DisplayName flexibleText     `json:"display_name"`
+	Identifier  flexibleText     `json:"identifier"`
+	Summary     flexibleText     `json:"summary"`
+	Evidence    flexibleEvidence `json:"evidence"`
+}
+
+func (f *flexibleText) UnmarshalJSON(data []byte) error {
+	var single string
+	if err := json.Unmarshal(data, &single); err == nil {
+		*f = flexibleText(strings.TrimSpace(single))
+		return nil
+	}
+
+	var items []string
+	if err := json.Unmarshal(data, &items); err == nil {
+		parts := make([]string, 0, len(items))
+		for _, item := range items {
+			item = strings.TrimSpace(item)
+			if item != "" {
+				parts = append(parts, item)
+			}
+		}
+		*f = flexibleText(strings.Join(parts, " / "))
+		return nil
+	}
+
+	return fmt.Errorf("must be a string or string array")
+}
+
+func (f *flexibleTextList) UnmarshalJSON(data []byte) error {
+	var items []string
+	if err := json.Unmarshal(data, &items); err == nil {
+		out := make([]string, 0, len(items))
+		for _, item := range items {
+			item = strings.TrimSpace(item)
+			if item != "" {
+				out = append(out, item)
+			}
+		}
+		*f = flexibleTextList(out)
+		return nil
+	}
+
+	var single string
+	if err := json.Unmarshal(data, &single); err == nil {
+		single = strings.TrimSpace(single)
+		if single == "" {
+			*f = nil
+			return nil
+		}
+		*f = flexibleTextList([]string{single})
+		return nil
+	}
+
+	return fmt.Errorf("must be a string or string array")
+}
+
+func normalizeFlexibleText(value flexibleText) string {
+	return strings.TrimSpace(string(value))
+}
+
+func normalizeFlexibleTextList(items flexibleTextList) []string {
+	out := make([]string, 0, len(items))
+	for _, item := range items {
+		item = strings.TrimSpace(item)
+		if item != "" {
+			out = append(out, item)
+		}
+	}
+	return out
+}
+
+func normalizeParsedWorkProfile(profile parsedWorkProfile) WorkProfile {
+	return WorkProfile{
+		ResponsibilityScope:   normalizeFlexibleText(profile.ResponsibilityScope),
+		TypicalWorkflow:       normalizeFlexibleText(profile.TypicalWorkflow),
+		DocWritingStyle:       normalizeFlexibleText(profile.DocWritingStyle),
+		DecisionMakingPattern: normalizeFlexibleText(profile.DecisionMakingPattern),
+		TechStackOrDomain:     normalizeFlexibleTextList(profile.TechStackOrDomain),
+	}
+}
+
+func normalizeParsedExpressionFingerprint(fingerprint parsedExpressionFingerprint) ExpressionFingerprint {
+	return ExpressionFingerprint{
+		Catchphrases:       normalizeFlexibleTextList(fingerprint.Catchphrases),
+		Jargon:             normalizeFlexibleTextList(fingerprint.Jargon),
+		SentencePattern:    normalizeFlexibleText(fingerprint.SentencePattern),
+		EmojiHabit:         normalizeFlexibleText(fingerprint.EmojiHabit),
+		FormalitySpectrum:  normalizeFlexibleText(fingerprint.FormalitySpectrum),
+		ReplySpeedPattern:  normalizeFlexibleText(fingerprint.ReplySpeedPattern),
+		ConflictExpression: normalizeFlexibleText(fingerprint.ConflictExpression),
+	}
+}
+
+func normalizeParsedOutputStyle(style parsedOutputStyle) OutputStyle {
+	return OutputStyle{
+		DocStructurePreference: normalizeFlexibleText(style.DocStructurePreference),
+		DetailLevel:            normalizeFlexibleText(style.DetailLevel),
+		EmailReplyPattern:      normalizeFlexibleText(style.EmailReplyPattern),
+		ChatReplyPattern:       normalizeFlexibleText(style.ChatReplyPattern),
+		MeetingBehavior:        normalizeFlexibleText(style.MeetingBehavior),
+	}
+}
+
+func normalizeParsedKnowledgeSignals(signals parsedKnowledgeSignals) KnowledgeSignals {
+	return KnowledgeSignals{
+		ExplicitOpinions: normalizeFlexibleTextList(signals.ExplicitOpinions),
+		LearnedLessons:   normalizeFlexibleTextList(signals.LearnedLessons),
+		RepeatedConcerns: normalizeFlexibleTextList(signals.RepeatedConcerns),
+		ReferenceSources: normalizeFlexibleTextList(signals.ReferenceSources),
+	}
+}
+
+func (e *flexibleEvidence) UnmarshalJSON(data []byte) error {
+	var text string
+	if err := json.Unmarshal(data, &text); err == nil {
+		*e = flexibleEvidence(strings.TrimSpace(text))
+		return nil
+	}
+
+	var items []string
+	if err := json.Unmarshal(data, &items); err == nil {
+		parts := make([]string, 0, len(items))
+		for _, item := range items {
+			item = strings.TrimSpace(item)
+			if item != "" {
+				parts = append(parts, item)
+			}
+		}
+		*e = flexibleEvidence(strings.Join(parts, " / "))
+		return nil
+	}
+
+	return fmt.Errorf("must be a string or string array")
 }
 
 var expectedBehaviorVectors = []struct {
@@ -95,7 +352,13 @@ var expectedBehaviorVectors = []struct {
 	{Label: "表达风格", LeftPole: "克制压缩", RightPole: "高频输出"},
 	{Label: "决策路径", LeftPole: "证据校准", RightPole: "直觉快判"},
 	{Label: "推进节奏", LeftPole: "稳态推进", RightPole: "高压突进"},
+	{Label: "信息处理", LeftPole: "深度聚焦", RightPole: "广度扫描"},
+	{Label: "风险态度", LeftPole: "防御优先", RightPole: "进攻优先"},
 }
+
+var sensitiveIdentifierPattern = regexp.MustCompile(`\b(?:ou|oc)_[A-Za-z0-9_]+\b`)
+
+var directMessageSignalPattern = regexp.MustCompile(`(?i)(单聊|私聊|p2p|direct message|一对一)`)
 
 var catalog = []Definition{
 	{
@@ -335,71 +598,81 @@ func ParseLLMResult(raw string) (Result, error) {
 	if !ok {
 		return Result{}, fmt.Errorf("primary_persona %q is not in the BSPI catalog", parsed.PrimaryPersona)
 	}
-	if strings.TrimSpace(parsed.Summary) == "" {
+	if normalizeFlexibleText(parsed.Summary) == "" {
 		return Result{}, fmt.Errorf("summary is required")
 	}
 	if len(parsed.Evidence) == 0 {
 		return Result{}, fmt.Errorf("evidence is required")
 	}
-	if strings.TrimSpace(parsed.CommunicationStyle) == "" {
+	workProfile := normalizeParsedWorkProfile(parsed.WorkProfile)
+	if err := validateWorkProfile(workProfile); err != nil {
+		return Result{}, err
+	}
+	expressionFingerprint := normalizeParsedExpressionFingerprint(parsed.ExpressionFingerprint)
+	if err := validateExpressionFingerprint(expressionFingerprint); err != nil {
+		return Result{}, err
+	}
+	outputStyle := normalizeParsedOutputStyle(parsed.OutputStyle)
+	if err := validateOutputStyle(outputStyle); err != nil {
+		return Result{}, err
+	}
+	knowledgeSignals := normalizeParsedKnowledgeSignals(parsed.KnowledgeSignals)
+	if err := validateKnowledgeSignals(knowledgeSignals); err != nil {
+		return Result{}, err
+	}
+	if normalizeFlexibleText(parsed.CommunicationStyle) == "" {
 		return Result{}, fmt.Errorf("communication_style is required")
 	}
-	if strings.TrimSpace(parsed.WorkPreferences) == "" {
+	if normalizeFlexibleText(parsed.WorkPreferences) == "" {
 		return Result{}, fmt.Errorf("work_preferences is required")
 	}
-	if strings.TrimSpace(parsed.BlindSpots) == "" {
+	if normalizeFlexibleText(parsed.BlindSpots) == "" {
 		return Result{}, fmt.Errorf("blind_spots is required")
 	}
 	confidence, err := parseConfidence(parsed.Confidence)
 	if err != nil {
 		return Result{}, err
-	if len(parsed.HighlightTags) < 2 || len(parsed.HighlightTags) > 4 {
+	}
+	normalizedHighlightTags := normalizeFlexibleTextList(parsed.HighlightTags)
+	if len(normalizedHighlightTags) < 2 || len(normalizedHighlightTags) > 4 {
 		return Result{}, fmt.Errorf("highlight_tags must contain 2 to 4 items")
 	}
 	if len(parsed.BehaviorVectors) != len(expectedBehaviorVectors) {
 		return Result{}, fmt.Errorf("behavior_vectors must contain %d items", len(expectedBehaviorVectors))
 	}
+	if normalizeFlexibleText(parsed.InteractionInsights.RelationshipSummary) == "" {
+		return Result{}, fmt.Errorf("interaction_insights.relationship_summary is required")
 	}
-	if strings.TrimSpace(parsed.Disclaimer) == "" {
+	if normalizeFlexibleText(parsed.Disclaimer) == "" {
 		return Result{}, fmt.Errorf("disclaimer is required")
 	}
 
-	evidence := make([]string, 0, len(parsed.Evidence))
-	for _, item := range parsed.Evidence {
-		item = strings.TrimSpace(item)
-		if item != "" {
-			evidence = append(evidence, item)
-		}
+	evidence, err := normalizeEvidenceItems(parsed.Evidence)
+	if err != nil {
+		return Result{}, err
 	}
-	if len(evidence) == 0 {
-		return Result{}, fmt.Errorf("evidence is required")
-	}
-	tags := make([]string, 0, len(parsed.HighlightTags))
-	for _, item := range parsed.HighlightTags {
-		item = strings.TrimSpace(item)
-		if item != "" {
-			tags = append(tags, item)
-		}
-	}
+
+	tags := normalizedHighlightTags
 	if len(tags) < 2 || len(tags) > 4 {
 		return Result{}, fmt.Errorf("highlight_tags must contain 2 to 4 non-empty items")
 	}
+
 	vectors := make([]BehaviorVector, 0, len(parsed.BehaviorVectors))
 	for i, item := range parsed.BehaviorVectors {
 		expected := expectedBehaviorVectors[i]
-		if strings.TrimSpace(item.Label) != expected.Label {
+		if normalizeFlexibleText(item.Label) != expected.Label {
 			return Result{}, fmt.Errorf("behavior_vectors[%d].label must be %q", i, expected.Label)
 		}
-		if strings.TrimSpace(item.LeftPole) != expected.LeftPole {
+		if normalizeFlexibleText(item.LeftPole) != expected.LeftPole {
 			return Result{}, fmt.Errorf("behavior_vectors[%d].left_pole must be %q", i, expected.LeftPole)
 		}
-		if strings.TrimSpace(item.RightPole) != expected.RightPole {
+		if normalizeFlexibleText(item.RightPole) != expected.RightPole {
 			return Result{}, fmt.Errorf("behavior_vectors[%d].right_pole must be %q", i, expected.RightPole)
 		}
 		if item.Score < 0 || item.Score > 100 {
 			return Result{}, fmt.Errorf("behavior_vectors[%d].score must be between 0 and 100", i)
 		}
-		if strings.TrimSpace(item.Summary) == "" {
+		if normalizeFlexibleText(item.Summary) == "" {
 			return Result{}, fmt.Errorf("behavior_vectors[%d].summary is required", i)
 		}
 		vectors = append(vectors, BehaviorVector{
@@ -407,10 +680,49 @@ func ParseLLMResult(raw string) (Result, error) {
 			LeftPole:  expected.LeftPole,
 			RightPole: expected.RightPole,
 			Score:     item.Score,
-			Summary:   strings.TrimSpace(item.Summary),
+			Summary:   normalizeFlexibleText(item.Summary),
 		})
 	}
 
+	normalizeTargets := func(items []parsedInteractionTarget, field string) ([]InteractionTarget, error) {
+		out := make([]InteractionTarget, 0, len(items))
+		for i, item := range items {
+			displayName := normalizeFlexibleText(item.DisplayName)
+			summary := normalizeFlexibleText(item.Summary)
+			evidence := strings.TrimSpace(string(item.Evidence))
+			if displayName == "" {
+				return nil, fmt.Errorf("interaction_insights.%s[%d].display_name is required", field, i)
+			}
+			if summary == "" {
+				return nil, fmt.Errorf("interaction_insights.%s[%d].summary is required", field, i)
+			}
+			if evidence == "" {
+				return nil, fmt.Errorf("interaction_insights.%s[%d].evidence is required", field, i)
+			}
+			target := InteractionTarget{
+				DisplayName: displayName,
+				Identifier:  normalizeFlexibleText(item.Identifier),
+				Summary:     summary,
+				Evidence:    evidence,
+			}
+			out = append(out, target)
+		}
+		return out, nil
+	}
+
+	coreCollaborators, err := normalizeTargets(parsed.InteractionInsights.CoreCollaborators, "core_collaborators")
+	if err != nil {
+		return Result{}, err
+	}
+	frequentPeople, err := normalizeTargets(parsed.InteractionInsights.FrequentPeople, "frequent_people")
+	if err != nil {
+		return Result{}, err
+	}
+	frequentChats, err := normalizeTargets(parsed.InteractionInsights.FrequentChats, "frequent_chats")
+	if err != nil {
+		return Result{}, err
+	}
+	coreCollaborators, frequentPeople, frequentChats = repairInteractionInsights(coreCollaborators, frequentPeople, frequentChats)
 	result := Result{
 		PrimaryPersona: Primary{
 			Shorthand:            def.Shorthand,
@@ -422,16 +734,27 @@ func ParseLLMResult(raw string) (Result, error) {
 			CanonicalDescription: def.CanonicalDescription,
 		},
 		Analysis: Analysis{
-			Summary:            strings.TrimSpace(parsed.Summary),
+			Summary:            normalizeFlexibleText(parsed.Summary),
 			Evidence:           evidence,
-			CommunicationStyle: strings.TrimSpace(parsed.CommunicationStyle),
-			WorkPreferences:    strings.TrimSpace(parsed.WorkPreferences),
-			BlindSpots:         strings.TrimSpace(parsed.BlindSpots),
+			CommunicationStyle: normalizeFlexibleText(parsed.CommunicationStyle),
+			WorkPreferences:    normalizeFlexibleText(parsed.WorkPreferences),
+			BlindSpots:         normalizeFlexibleText(parsed.BlindSpots),
 			Confidence:         confidence,
-			Disclaimer:         strings.TrimSpace(parsed.Disclaimer),
+			Disclaimer:         normalizeFlexibleText(parsed.Disclaimer),
 		},
-		HighlightTags:   tags,
-		BehaviorVectors: vectors,
+		WorkProfile:           sanitizeWorkProfile(workProfile),
+		ExpressionFingerprint: sanitizeExpressionFingerprint(expressionFingerprint),
+		OutputStyle:           sanitizeOutputStyle(outputStyle),
+		KnowledgeSignals:      sanitizeKnowledgeSignals(knowledgeSignals),
+		HighlightTags:         tags,
+		BehaviorVectors:       vectors,
+		InteractionInsights: InteractionInsights{
+			RelationshipSummary: normalizeFlexibleText(parsed.InteractionInsights.RelationshipSummary),
+			CoreCollaborators:   coreCollaborators,
+			FrequentPeople:      frequentPeople,
+			FrequentChats:       frequentChats,
+		},
+		ContrastSignals: sanitizeStringSlice(normalizeFlexibleTextList(parsed.ContrastSignals)),
 	}
 	result.ShareCard = ShareCard{
 		Title:           result.PrimaryPersona.ChineseLabel + " / " + result.PrimaryPersona.Shorthand,
@@ -439,7 +762,325 @@ func ParseLLMResult(raw string) (Result, error) {
 		ImageURL:        result.PrimaryPersona.ImageURL,
 		DisclaimerShort: result.Analysis.Disclaimer,
 	}
-	return result, nil
+	return SanitizeResult(result), nil
+}
+
+func SanitizeResult(result Result) Result {
+	result.Analysis.Summary = scrubSensitiveIdentifiers(result.Analysis.Summary)
+	result.Analysis.CommunicationStyle = scrubSensitiveIdentifiers(result.Analysis.CommunicationStyle)
+	result.Analysis.WorkPreferences = scrubSensitiveIdentifiers(result.Analysis.WorkPreferences)
+	result.Analysis.BlindSpots = scrubSensitiveIdentifiers(result.Analysis.BlindSpots)
+	result.Analysis.Disclaimer = scrubSensitiveIdentifiers(result.Analysis.Disclaimer)
+	result.Analysis.Evidence = sanitizeEvidenceItems(result.Analysis.Evidence)
+	result.WorkProfile = sanitizeWorkProfile(result.WorkProfile)
+	result.ExpressionFingerprint = sanitizeExpressionFingerprint(result.ExpressionFingerprint)
+	result.OutputStyle = sanitizeOutputStyle(result.OutputStyle)
+	result.KnowledgeSignals = sanitizeKnowledgeSignals(result.KnowledgeSignals)
+	result.HighlightTags = sanitizeStringSlice(result.HighlightTags)
+	result.InteractionInsights.RelationshipSummary = scrubSensitiveIdentifiers(result.InteractionInsights.RelationshipSummary)
+	result.InteractionInsights.CoreCollaborators = sanitizeInteractionTargets(result.InteractionInsights.CoreCollaborators)
+	result.InteractionInsights.FrequentPeople = sanitizeInteractionTargets(result.InteractionInsights.FrequentPeople)
+	result.InteractionInsights.FrequentChats = sanitizeInteractionTargets(result.InteractionInsights.FrequentChats)
+	result.ContrastSignals = sanitizeStringSlice(result.ContrastSignals)
+	result.ShareCard.Title = scrubSensitiveIdentifiers(result.ShareCard.Title)
+	result.ShareCard.Subtitle = scrubSensitiveIdentifiers(result.ShareCard.Subtitle)
+	result.ShareCard.DisclaimerShort = scrubSensitiveIdentifiers(result.ShareCard.DisclaimerShort)
+	result.Coverage.Summary = scrubSensitiveIdentifiers(result.Coverage.Summary)
+	return result
+}
+
+func normalizeEvidenceItems(items []parsedEvidenceItem) ([]EvidenceItem, error) {
+	out := make([]EvidenceItem, 0, len(items))
+	for i, item := range items {
+		domains := sanitizeStringSlice(normalizeFlexibleTextList(item.Domains))
+		if len(domains) == 0 {
+			return nil, fmt.Errorf("evidence[%d].domains is required", i)
+		}
+		behavior := normalizeFlexibleText(item.Behavior)
+		if behavior == "" {
+			return nil, fmt.Errorf("evidence[%d].behavior is required", i)
+		}
+		strength := normalizeFlexibleText(item.Strength)
+		if strength == "" {
+			return nil, fmt.Errorf("evidence[%d].strength is required", i)
+		}
+		out = append(out, EvidenceItem{
+			Domains:       domains,
+			Behavior:      behavior,
+			Strength:      strength,
+			IsCrossDomain: item.IsCrossDomain,
+			IsDistinctive: item.IsDistinctive,
+		})
+	}
+	if len(out) == 0 {
+		return nil, fmt.Errorf("evidence is required")
+	}
+	return out, nil
+}
+
+func sanitizeEvidenceItems(items []EvidenceItem) []EvidenceItem {
+	if items == nil {
+		return nil
+	}
+	out := make([]EvidenceItem, 0, len(items))
+	for _, item := range items {
+		out = append(out, EvidenceItem{
+			Domains:       sanitizeStringSlice(item.Domains),
+			Behavior:      scrubSensitiveIdentifiers(item.Behavior),
+			Strength:      scrubSensitiveIdentifiers(item.Strength),
+			IsCrossDomain: item.IsCrossDomain,
+			IsDistinctive: item.IsDistinctive,
+		})
+	}
+	return out
+}
+
+func sanitizeStringSlice(items []string) []string {
+	if items == nil {
+		return nil
+	}
+	out := make([]string, 0, len(items))
+	for _, item := range items {
+		out = append(out, scrubSensitiveIdentifiers(item))
+	}
+	return out
+}
+
+func sanitizeWorkProfile(profile WorkProfile) WorkProfile {
+	return WorkProfile{
+		ResponsibilityScope:   scrubSensitiveIdentifiers(profile.ResponsibilityScope),
+		TypicalWorkflow:       scrubSensitiveIdentifiers(profile.TypicalWorkflow),
+		DocWritingStyle:       scrubSensitiveIdentifiers(profile.DocWritingStyle),
+		DecisionMakingPattern: scrubSensitiveIdentifiers(profile.DecisionMakingPattern),
+		TechStackOrDomain:     sanitizeStringSlice(profile.TechStackOrDomain),
+	}
+}
+
+func sanitizeExpressionFingerprint(fingerprint ExpressionFingerprint) ExpressionFingerprint {
+	return ExpressionFingerprint{
+		Catchphrases:       sanitizeStringSlice(fingerprint.Catchphrases),
+		Jargon:             sanitizeStringSlice(fingerprint.Jargon),
+		SentencePattern:    scrubSensitiveIdentifiers(fingerprint.SentencePattern),
+		EmojiHabit:         scrubSensitiveIdentifiers(fingerprint.EmojiHabit),
+		FormalitySpectrum:  scrubSensitiveIdentifiers(fingerprint.FormalitySpectrum),
+		ReplySpeedPattern:  scrubSensitiveIdentifiers(fingerprint.ReplySpeedPattern),
+		ConflictExpression: scrubSensitiveIdentifiers(fingerprint.ConflictExpression),
+	}
+}
+
+func sanitizeOutputStyle(style OutputStyle) OutputStyle {
+	return OutputStyle{
+		DocStructurePreference: scrubSensitiveIdentifiers(style.DocStructurePreference),
+		DetailLevel:            scrubSensitiveIdentifiers(style.DetailLevel),
+		EmailReplyPattern:      scrubSensitiveIdentifiers(style.EmailReplyPattern),
+		ChatReplyPattern:       scrubSensitiveIdentifiers(style.ChatReplyPattern),
+		MeetingBehavior:        scrubSensitiveIdentifiers(style.MeetingBehavior),
+	}
+}
+
+func sanitizeKnowledgeSignals(signals KnowledgeSignals) KnowledgeSignals {
+	return KnowledgeSignals{
+		ExplicitOpinions: sanitizeStringSlice(signals.ExplicitOpinions),
+		LearnedLessons:   sanitizeStringSlice(signals.LearnedLessons),
+		RepeatedConcerns: sanitizeStringSlice(signals.RepeatedConcerns),
+		ReferenceSources: sanitizeStringSlice(signals.ReferenceSources),
+	}
+}
+
+func validateWorkProfile(profile WorkProfile) error {
+	if strings.TrimSpace(profile.ResponsibilityScope) == "" {
+		return fmt.Errorf("work_profile.responsibility_scope is required")
+	}
+	if strings.TrimSpace(profile.TypicalWorkflow) == "" {
+		return fmt.Errorf("work_profile.typical_workflow is required")
+	}
+	if strings.TrimSpace(profile.DocWritingStyle) == "" {
+		return fmt.Errorf("work_profile.doc_writing_style is required")
+	}
+	if strings.TrimSpace(profile.DecisionMakingPattern) == "" {
+		return fmt.Errorf("work_profile.decision_making_pattern is required")
+	}
+	if len(sanitizeStringSlice(profile.TechStackOrDomain)) == 0 {
+		return fmt.Errorf("work_profile.tech_stack_or_domain is required")
+	}
+	return nil
+}
+
+func validateExpressionFingerprint(fingerprint ExpressionFingerprint) error {
+	if len(sanitizeStringSlice(fingerprint.Catchphrases)) == 0 {
+		return fmt.Errorf("expression_fingerprint.catchphrases is required")
+	}
+	if len(sanitizeStringSlice(fingerprint.Jargon)) == 0 {
+		return fmt.Errorf("expression_fingerprint.jargon is required")
+	}
+	if strings.TrimSpace(fingerprint.SentencePattern) == "" {
+		return fmt.Errorf("expression_fingerprint.sentence_pattern is required")
+	}
+	if strings.TrimSpace(fingerprint.EmojiHabit) == "" {
+		return fmt.Errorf("expression_fingerprint.emoji_habit is required")
+	}
+	if strings.TrimSpace(fingerprint.FormalitySpectrum) == "" {
+		return fmt.Errorf("expression_fingerprint.formality_spectrum is required")
+	}
+	if strings.TrimSpace(fingerprint.ReplySpeedPattern) == "" {
+		return fmt.Errorf("expression_fingerprint.reply_speed_pattern is required")
+	}
+	if strings.TrimSpace(fingerprint.ConflictExpression) == "" {
+		return fmt.Errorf("expression_fingerprint.conflict_expression is required")
+	}
+	return nil
+}
+
+func validateOutputStyle(style OutputStyle) error {
+	if strings.TrimSpace(style.DocStructurePreference) == "" {
+		return fmt.Errorf("output_style.doc_structure_preference is required")
+	}
+	if strings.TrimSpace(style.DetailLevel) == "" {
+		return fmt.Errorf("output_style.detail_level is required")
+	}
+	if strings.TrimSpace(style.EmailReplyPattern) == "" {
+		return fmt.Errorf("output_style.email_reply_pattern is required")
+	}
+	if strings.TrimSpace(style.ChatReplyPattern) == "" {
+		return fmt.Errorf("output_style.chat_reply_pattern is required")
+	}
+	if strings.TrimSpace(style.MeetingBehavior) == "" {
+		return fmt.Errorf("output_style.meeting_behavior is required")
+	}
+	return nil
+}
+
+func validateKnowledgeSignals(signals KnowledgeSignals) error {
+	if len(sanitizeStringSlice(signals.ExplicitOpinions)) == 0 {
+		return fmt.Errorf("knowledge_signals.explicit_opinions is required")
+	}
+	if len(sanitizeStringSlice(signals.LearnedLessons)) == 0 {
+		return fmt.Errorf("knowledge_signals.learned_lessons is required")
+	}
+	if len(sanitizeStringSlice(signals.RepeatedConcerns)) == 0 {
+		return fmt.Errorf("knowledge_signals.repeated_concerns is required")
+	}
+	if len(sanitizeStringSlice(signals.ReferenceSources)) == 0 {
+		return fmt.Errorf("knowledge_signals.reference_sources is required")
+	}
+	return nil
+}
+
+func sanitizeInteractionTargets(items []InteractionTarget) []InteractionTarget {
+	if items == nil {
+		return nil
+	}
+	out := make([]InteractionTarget, 0, len(items))
+	for _, item := range items {
+		out = append(out, InteractionTarget{
+			DisplayName: scrubSensitiveIdentifiers(item.DisplayName),
+			Identifier:  "",
+			Summary:     scrubSensitiveIdentifiers(item.Summary),
+			Evidence:    scrubSensitiveIdentifiers(item.Evidence),
+		})
+	}
+	return out
+}
+
+func repairInteractionInsights(coreCollaborators, frequentPeople, frequentChats []InteractionTarget) ([]InteractionTarget, []InteractionTarget, []InteractionTarget) {
+	repairedChats := make([]InteractionTarget, 0, len(frequentChats))
+	for _, item := range frequentChats {
+		if !hasDirectMessageSignal(item) {
+			repairedChats = append(repairedChats, item)
+			continue
+		}
+		if mergeTargetByDisplayName(&frequentPeople, item) {
+			continue
+		}
+		if shouldPromoteToCoreCollaborator(item) {
+			if mergeTargetByDisplayName(&coreCollaborators, item) {
+				continue
+			}
+			coreCollaborators = append(coreCollaborators, item)
+			continue
+		}
+		frequentPeople = append(frequentPeople, item)
+	}
+	return coreCollaborators, frequentPeople, repairedChats
+}
+
+func mergeTargetByDisplayName(items *[]InteractionTarget, incoming InteractionTarget) bool {
+	displayName := strings.TrimSpace(incoming.DisplayName)
+	if displayName == "" {
+		return false
+	}
+	for i := range *items {
+		if strings.EqualFold(strings.TrimSpace((*items)[i].DisplayName), displayName) {
+			(*items)[i] = mergeInteractionTarget((*items)[i], incoming)
+			return true
+		}
+	}
+	return false
+}
+
+func mergeInteractionTarget(existing, incoming InteractionTarget) InteractionTarget {
+	return InteractionTarget{
+		DisplayName: firstNonEmpty(existing.DisplayName, incoming.DisplayName),
+		Identifier:  firstNonEmpty(existing.Identifier, incoming.Identifier),
+		Summary:     mergeDistinctText(existing.Summary, incoming.Summary),
+		Evidence:    mergeDistinctText(existing.Evidence, incoming.Evidence),
+	}
+}
+
+func shouldPromoteToCoreCollaborator(target InteractionTarget) bool {
+	combined := strings.ToLower(strings.Join([]string{
+		target.DisplayName,
+		target.Summary,
+		target.Evidence,
+	}, "\n"))
+	for _, marker := range []string{"核心", "搭档", "主协作", "关键协作", "方案推进"} {
+		if strings.Contains(combined, strings.ToLower(marker)) {
+			return true
+		}
+	}
+	return false
+}
+
+func mergeDistinctText(existing, incoming string) string {
+	parts := []string{}
+	seen := map[string]struct{}{}
+	for _, candidate := range []string{existing, incoming} {
+		for _, fragment := range strings.Split(candidate, " / ") {
+			fragment = strings.TrimSpace(fragment)
+			if fragment == "" {
+				continue
+			}
+			if _, ok := seen[fragment]; ok {
+				continue
+			}
+			seen[fragment] = struct{}{}
+			parts = append(parts, fragment)
+		}
+	}
+	return strings.Join(parts, " / ")
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func scrubSensitiveIdentifiers(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+	return strings.TrimSpace(sensitiveIdentifierPattern.ReplaceAllString(value, "已隐藏ID"))
+}
+
+func hasDirectMessageSignal(target InteractionTarget) bool {
+	combined := strings.Join([]string{target.DisplayName, target.Summary, target.Evidence}, "\n")
+	return directMessageSignalPattern.MatchString(combined)
 }
 
 func parseConfidence(raw any) (float64, error) {

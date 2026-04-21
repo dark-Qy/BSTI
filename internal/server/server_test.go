@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -11,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"feishu-personality-agent/internal/collector"
 	"feishu-personality-agent/internal/config"
 	"feishu-personality-agent/internal/persona"
 	"feishu-personality-agent/internal/session"
@@ -77,6 +79,92 @@ func TestServerCreatesSessionAndStartsLogin(t *testing.T) {
 	if login["verification_url"] != "https://verify.example" {
 		t.Fatalf("verification_url = %q", login["verification_url"])
 	}
+}
+
+func TestServerMarksLoginStartFailureAsAuthFailed(t *testing.T) {
+	store := session.NewFileStore(t.TempDir())
+	srv := New(ServerConfig{
+		App:   config.Config{},
+		Store: store,
+		LoginStarter: func(ctx context.Context, s *session.Session) (string, error) {
+			return "", errors.New("unable to start login")
+		},
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/sessions", nil)
+	w := httptest.NewRecorder()
+	srv.Router().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("create status = %d body=%s", w.Code, w.Body.String())
+	}
+
+	var created map[string]string
+	if err := json.Unmarshal(w.Body.Bytes(), &created); err != nil {
+		t.Fatal(err)
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/api/sessions/"+created["session_id"]+"/login", nil)
+	w = httptest.NewRecorder()
+	srv.Router().ServeHTTP(w, req)
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("login status = %d body=%s", w.Code, w.Body.String())
+	}
+
+	loaded, err := store.Get(created["session_id"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Status != session.StatusAuthFailed {
+		t.Fatalf("status = %q, want %q", loaded.Status, session.StatusAuthFailed)
+	}
+	if loaded.Error != "unable to start login" {
+		t.Fatalf("error = %q", loaded.Error)
+	}
+}
+
+func TestServerMarksAnalyzerFailureAsAnalysisFailed(t *testing.T) {
+	store := session.NewFileStore(t.TempDir())
+	srv := New(ServerConfig{
+		App:   config.Config{},
+		Store: store,
+		Analyzer: func(ctx context.Context, s *session.Session) error {
+			return errors.New("analysis exploded")
+		},
+	})
+
+	item, err := store.Create()
+	if err != nil {
+		t.Fatal(err)
+	}
+	item.Status = session.StatusAuthenticated
+	if err := store.Save(item); err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/sessions/"+item.ID+"/analyze", nil)
+	w := httptest.NewRecorder()
+	srv.Router().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("analyze status = %d body=%s", w.Code, w.Body.String())
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		loaded, err := store.Get(item.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if loaded.Status == session.StatusAnalysisFailed {
+			if loaded.Error != "analysis exploded" {
+				t.Fatalf("error = %q", loaded.Error)
+			}
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	loaded, _ := store.Get(item.ID)
+	t.Fatalf("session did not enter analysis_failed: %#v", loaded)
 }
 
 func TestStatusIncludesPrimaryPersonaSummaryWhenReportIsReady(t *testing.T) {
@@ -211,6 +299,81 @@ func TestStatusReportsAppConfigNotRequiredWhenServerCredentialsExist(t *testing.
 	}
 }
 
+func TestStatusDistinguishesAuthAndAnalysisFailures(t *testing.T) {
+	store := session.NewFileStore(t.TempDir())
+	srv := New(ServerConfig{
+		App:   config.Config{},
+		Store: store,
+	})
+
+	cases := []struct {
+		name       string
+		status     session.Status
+		label      string
+		wantAction string
+	}{
+		{
+			name:       "auth failed",
+			status:     session.Status("auth_failed"),
+			label:      "授权流程失败，请重新连接飞书",
+			wantAction: "complete_authorization",
+		},
+		{
+			name:       "analysis failed",
+			status:     session.Status("analysis_failed"),
+			label:      "分析流程失败，可直接重试分析",
+			wantAction: "start_analysis",
+		},
+		{
+			name:       "legacy failed",
+			status:     session.Status("failed"),
+			label:      "流程执行失败",
+			wantAction: "retry",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			item, err := store.Create()
+			if err != nil {
+				t.Fatal(err)
+			}
+			item.Status = tc.status
+			item.Error = "boom"
+			if err := store.Save(item); err != nil {
+				t.Fatal(err)
+			}
+
+			req := httptest.NewRequest(http.MethodGet, "/api/sessions/"+item.ID+"/status", nil)
+			w := httptest.NewRecorder()
+			srv.Router().ServeHTTP(w, req)
+			if w.Code != http.StatusOK {
+				t.Fatalf("status code = %d body=%s", w.Code, w.Body.String())
+			}
+
+			var resp struct {
+				Status   string `json:"status"`
+				Progress struct {
+					Label string `json:"label"`
+				} `json:"progress"`
+				NextAction string `json:"next_action"`
+			}
+			if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+				t.Fatal(err)
+			}
+			if resp.Status != string(tc.status) {
+				t.Fatalf("status = %q, want %q", resp.Status, tc.status)
+			}
+			if resp.Progress.Label != tc.label {
+				t.Fatalf("progress label = %q, want %q", resp.Progress.Label, tc.label)
+			}
+			if resp.NextAction != tc.wantAction {
+				t.Fatalf("next_action = %q, want %q", resp.NextAction, tc.wantAction)
+			}
+		})
+	}
+}
+
 func TestReportDataReturnsStructuredReport(t *testing.T) {
 	store := session.NewFileStore(t.TempDir())
 	srv := New(ServerConfig{
@@ -235,13 +398,45 @@ func TestReportDataReturnsStructuredReport(t *testing.T) {
 			CanonicalDescription: "PRISM 擅长跨文化切换与桥接。",
 		},
 		Analysis: persona.Analysis{
-			Summary:            "跨文化语境切换自然，适合做协作桥梁。",
-			Evidence:           []string{"频繁在不同协作对象之间切换表达方式", "跨团队沟通密度高"},
+			Summary: "跨文化语境切换自然，适合做协作桥梁。",
+			Evidence: []persona.EvidenceItem{
+				{Domains: []string{"chat", "docs"}, Behavior: "频繁在不同协作对象之间切换表达方式", Strength: "高频", IsCrossDomain: true, IsDistinctive: true},
+				{Domains: []string{"chat", "calendar"}, Behavior: "跨团队沟通密度高", Strength: "多次关键节点出现", IsCrossDomain: true, IsDistinctive: false},
+			},
 			CommunicationStyle: "先理解对方语境，再翻译回共同问题。",
 			WorkPreferences:    "偏好多方协作与需要桥接认知差异的任务。",
 			BlindSpots:         "可能长期适配别人而忽略自己的固定表达方式。",
 			Confidence:         0.86,
 			Disclaimer:         "仅基于授权数据的行为风格观察。",
+		},
+		WorkProfile: persona.WorkProfile{
+			ResponsibilityScope:   "负责跨团队协作推进。",
+			TypicalWorkflow:       "先收集输入，再统一结构，再推进落实。",
+			DocWritingStyle:       "偏好多级标题和统一模板。",
+			DecisionMakingPattern: "先校准上下文再判断。",
+			TechStackOrDomain:     []string{"协作流程", "方案整理"},
+		},
+		ExpressionFingerprint: persona.ExpressionFingerprint{
+			Catchphrases:       []string{"先对齐一下", "我帮大家收一下"},
+			Jargon:             []string{"对齐", "上下文"},
+			SentencePattern:    "先复述差异，再给结论。",
+			EmojiHabit:         "低频使用 👍。",
+			FormalitySpectrum:  "正式文档偏正式，群聊偏轻量。",
+			ReplySpeedPattern:  "关键议题快速响应。",
+			ConflictExpression: "先翻译分歧来源。",
+		},
+		OutputStyle: persona.OutputStyle{
+			DocStructurePreference: "多级标题 + 列点归纳",
+			DetailLevel:            "适中偏详尽",
+			EmailReplyPattern:      "先结论再展开",
+			ChatReplyPattern:       "关键节点集中输出",
+			MeetingBehavior:        "讨论中负责收敛",
+		},
+		KnowledgeSignals: persona.KnowledgeSignals{
+			ExplicitOpinions: []string{"跨团队问题先对齐语境。"},
+			LearnedLessons:   []string{"认知不统一时直接推进容易返工。"},
+			RepeatedConcerns: []string{"上下文偏差"},
+			ReferenceSources: []string{"会议结论", "方案文档"},
 		},
 		HighlightTags: []string{"跨团队桥接", "语境切换", "协作雷达"},
 		BehaviorVectors: []persona.BehaviorVector{
@@ -249,12 +444,27 @@ func TestReportDataReturnsStructuredReport(t *testing.T) {
 			{Label: "表达风格", LeftPole: "克制压缩", RightPole: "高频输出", Score: 71, Summary: "输出密度较高。"},
 			{Label: "决策路径", LeftPole: "证据校准", RightPole: "直觉快判", Score: 44, Summary: "先校准事实再下判断。"},
 			{Label: "推进节奏", LeftPole: "稳态推进", RightPole: "高压突进", Score: 58, Summary: "稳中偏快。"},
+			{Label: "信息处理", LeftPole: "深度聚焦", RightPole: "广度扫描", Score: 68, Summary: "会先做多角色整合。"},
+			{Label: "风险态度", LeftPole: "防御优先", RightPole: "进攻优先", Score: 39, Summary: "更关注减少误解成本。"},
+		},
+		InteractionInsights: persona.InteractionInsights{
+			RelationshipSummary: "对外沟通和跨团队桥接都很活跃。",
+			CoreCollaborators: []persona.InteractionTarget{
+				{DisplayName: "小李", Identifier: "ou_core_1", Summary: "方案推进搭档", Evidence: "最近一个月 direct message 频繁来回。"},
+			},
+			FrequentPeople: []persona.InteractionTarget{
+				{DisplayName: "小李", Identifier: "ou_core_1", Summary: "高频技术讨论对象", Evidence: "连续多周高密度互动。"},
+			},
+			FrequentChats: []persona.InteractionTarget{
+				{DisplayName: "跨团队项目群", Identifier: "oc_chat_1", Summary: "高频同步群", Evidence: "多次在群内发起与回应结论收敛。"},
+			},
 		},
 		Coverage: persona.Coverage{
 			SuccessfulDomains: []string{"chat", "docs", "calendar"},
 			FailedDomains:     []string{"mail"},
 			Summary:           "已覆盖 3 个数据域，1 个数据域因权限受限未纳入。",
 		},
+		ContrastSignals: []string{"群聊中高频输出，但在正式文档里保持高度压缩。"},
 	}
 	if err := store.Save(item); err != nil {
 		t.Fatal(err)
@@ -278,8 +488,23 @@ func TestReportDataReturnsStructuredReport(t *testing.T) {
 	if resp.Status != string(session.StatusDone) {
 		t.Fatalf("status = %q", resp.Status)
 	}
-	if len(resp.Report.BehaviorVectors) != 4 {
+	if len(resp.Report.BehaviorVectors) != 6 {
 		t.Fatalf("report = %#v", resp.Report)
+	}
+	if resp.Report.WorkProfile.ResponsibilityScope == "" {
+		t.Fatalf("work_profile = %#v", resp.Report.WorkProfile)
+	}
+	if len(resp.Report.Analysis.Evidence) != 2 {
+		t.Fatalf("evidence = %#v", resp.Report.Analysis.Evidence)
+	}
+	if resp.Report.InteractionInsights.RelationshipSummary == "" {
+		t.Fatalf("interaction_insights = %#v", resp.Report.InteractionInsights)
+	}
+	if resp.Report.InteractionInsights.CoreCollaborators[0].Identifier != "" {
+		t.Fatalf("core identifier leaked: %#v", resp.Report.InteractionInsights.CoreCollaborators[0])
+	}
+	if resp.Report.InteractionInsights.FrequentChats[0].Identifier != "" {
+		t.Fatalf("chat identifier leaked: %#v", resp.Report.InteractionInsights.FrequentChats[0])
 	}
 	if resp.Report.Coverage.Summary == "" {
 		t.Fatalf("coverage = %#v", resp.Report.Coverage)
@@ -303,6 +528,46 @@ func TestReportDataReturnsConflictWhenReportIsNotReady(t *testing.T) {
 	srv.Router().ServeHTTP(w, req)
 	if w.Code != http.StatusConflict {
 		t.Fatalf("report-data code = %d body=%s", w.Code, w.Body.String())
+	}
+}
+
+func TestWriteAnalysisPromptLogPersistsPrompt(t *testing.T) {
+	dir := t.TempDir()
+	prompt := "final prompt payload"
+	if err := writeAnalysisPromptLog(dir, prompt); err != nil {
+		t.Fatal(err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(dir, "logs", "analysis-prompt.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != prompt {
+		t.Fatalf("prompt log = %q", string(data))
+	}
+}
+
+func TestWriteAnalysisDigestsLogPersistsJSON(t *testing.T) {
+	dir := t.TempDir()
+	input := collector.AnalysisInput{
+		Stats: map[string]collector.DomainDigestStats{
+			"chat_prompt": {RawChars: 120, ItemsBefore: 20, ItemsAfter: 12, FilteredItems: 8, FetchedItems: 3},
+		},
+	}
+	if err := writeAnalysisDigestsLog(dir, input); err != nil {
+		t.Fatal(err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(dir, "logs", "analysis-domain-digests.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got collector.AnalysisInput
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Stats["chat_prompt"].FilteredItems != 8 {
+		t.Fatalf("stats = %#v", got.Stats["chat_prompt"])
 	}
 }
 
@@ -391,7 +656,7 @@ func TestServerConfigProcessSurvivesLoginRequestContext(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if loaded.Status == session.StatusFailed {
+	if loaded.Status == session.StatusFailed || loaded.Status == session.StatusAuthFailed || loaded.Status == session.StatusAnalysisFailed {
 		t.Fatalf("session failed after request context cancellation: %#v", loaded)
 	}
 	if loaded.VerificationURL != "https://config.example/page/cli" {

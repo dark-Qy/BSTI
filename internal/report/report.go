@@ -17,6 +17,7 @@ type Paths struct {
 }
 
 func WriteLocal(dir string, result persona.Result) (Paths, error) {
+	result = persona.SanitizeResult(result)
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return Paths{}, err
 	}
@@ -49,9 +50,44 @@ func renderMarkdown(result persona.Result) string {
 	b.WriteString(result.PrimaryPersona.CanonicalDescription + "\n\n")
 	b.WriteString("## 个体分析摘要\n")
 	b.WriteString(result.Analysis.Summary + "\n\n")
+	b.WriteString("## Work Profile\n")
+	b.WriteString("- Responsibility Scope: " + result.WorkProfile.ResponsibilityScope + "\n")
+	b.WriteString("- Typical Workflow: " + result.WorkProfile.TypicalWorkflow + "\n")
+	b.WriteString("- Doc Writing Style: " + result.WorkProfile.DocWritingStyle + "\n")
+	b.WriteString("- Decision Pattern: " + result.WorkProfile.DecisionMakingPattern + "\n")
+	for _, item := range result.WorkProfile.TechStackOrDomain {
+		b.WriteString("- Domain: " + item + "\n")
+	}
+	b.WriteString("\n## Expression Fingerprint\n")
+	b.WriteString("- Catchphrases: " + strings.Join(result.ExpressionFingerprint.Catchphrases, " / ") + "\n")
+	b.WriteString("- Jargon: " + strings.Join(result.ExpressionFingerprint.Jargon, " / ") + "\n")
+	b.WriteString("- Sentence Pattern: " + result.ExpressionFingerprint.SentencePattern + "\n")
+	b.WriteString("- Emoji Habit: " + result.ExpressionFingerprint.EmojiHabit + "\n")
+	b.WriteString("- Formality Spectrum: " + result.ExpressionFingerprint.FormalitySpectrum + "\n")
+	b.WriteString("- Reply Speed Pattern: " + result.ExpressionFingerprint.ReplySpeedPattern + "\n")
+	b.WriteString("- Conflict Expression: " + result.ExpressionFingerprint.ConflictExpression + "\n\n")
+	b.WriteString("## Output Style\n")
+	b.WriteString("- Doc Structure Preference: " + result.OutputStyle.DocStructurePreference + "\n")
+	b.WriteString("- Detail Level: " + result.OutputStyle.DetailLevel + "\n")
+	b.WriteString("- Email Reply Pattern: " + result.OutputStyle.EmailReplyPattern + "\n")
+	b.WriteString("- Chat Reply Pattern: " + result.OutputStyle.ChatReplyPattern + "\n")
+	b.WriteString("- Meeting Behavior: " + result.OutputStyle.MeetingBehavior + "\n\n")
+	b.WriteString("## Knowledge Signals\n")
+	for _, item := range result.KnowledgeSignals.ExplicitOpinions {
+		b.WriteString("- Explicit Opinion: " + item + "\n")
+	}
+	for _, item := range result.KnowledgeSignals.LearnedLessons {
+		b.WriteString("- Learned Lesson: " + item + "\n")
+	}
+	for _, item := range result.KnowledgeSignals.RepeatedConcerns {
+		b.WriteString("- Repeated Concern: " + item + "\n")
+	}
+	for _, item := range result.KnowledgeSignals.ReferenceSources {
+		b.WriteString("- Reference Source: " + item + "\n")
+	}
 	b.WriteString("## 证据\n")
 	for _, item := range result.Analysis.Evidence {
-		b.WriteString("- " + item + "\n")
+		b.WriteString("- [" + strings.Join(item.Domains, "/") + "] " + item.Behavior + " | " + item.Strength + "\n")
 	}
 	b.WriteString("\n## 沟通风格\n")
 	b.WriteString(result.Analysis.CommunicationStyle + "\n\n")
@@ -67,6 +103,24 @@ func renderMarkdown(result persona.Result) string {
 	for _, vector := range result.BehaviorVectors {
 		b.WriteString("- " + vector.Label + ": " + vector.LeftPole + " ↔ " + vector.RightPole + " | " + strconv.Itoa(vector.Score) + "\n")
 		b.WriteString("  " + vector.Summary + "\n")
+	}
+	if result.InteractionInsights.RelationshipSummary != "" ||
+		len(result.InteractionInsights.CoreCollaborators) > 0 ||
+		len(result.InteractionInsights.FrequentPeople) > 0 ||
+		len(result.InteractionInsights.FrequentChats) > 0 {
+		b.WriteString("\n## Interaction Insights\n")
+		if result.InteractionInsights.RelationshipSummary != "" {
+			b.WriteString(result.InteractionInsights.RelationshipSummary + "\n")
+		}
+		writeInteractionListMarkdown(&b, "Core Collaborators", result.InteractionInsights.CoreCollaborators)
+		writeInteractionListMarkdown(&b, "Frequent People", result.InteractionInsights.FrequentPeople)
+		writeInteractionListMarkdown(&b, "Frequent Chats", result.InteractionInsights.FrequentChats)
+	}
+	if len(result.ContrastSignals) > 0 {
+		b.WriteString("\n## Contrast Signals\n")
+		for _, item := range result.ContrastSignals {
+			b.WriteString("- " + item + "\n")
+		}
 	}
 	b.WriteString("\n## Data Coverage\n")
 	b.WriteString(result.Coverage.Summary + "\n\n")
@@ -122,11 +176,66 @@ func renderHTML(result persona.Result) string {
 		}
 		b.WriteString("</div>")
 	}
-	b.WriteString("<div class=\"section\"><h2>证据</h2><ul class=\"evidence\">")
-	for _, item := range result.Analysis.Evidence {
-		b.WriteString("<li>" + html.EscapeString(item) + "</li>")
+	b.WriteString("<div class=\"section\"><h2>工作画像</h2><ul class=\"evidence\">")
+	b.WriteString("<li><strong>负责范围：</strong>" + html.EscapeString(result.WorkProfile.ResponsibilityScope) + "</li>")
+	b.WriteString("<li><strong>典型路径：</strong>" + html.EscapeString(result.WorkProfile.TypicalWorkflow) + "</li>")
+	b.WriteString("<li><strong>文档风格：</strong>" + html.EscapeString(result.WorkProfile.DocWritingStyle) + "</li>")
+	b.WriteString("<li><strong>决策模式：</strong>" + html.EscapeString(result.WorkProfile.DecisionMakingPattern) + "</li>")
+	b.WriteString("<li><strong>领域关键词：</strong>" + html.EscapeString(strings.Join(result.WorkProfile.TechStackOrDomain, " / ")) + "</li>")
+	b.WriteString("<li><strong>输出结构：</strong>" + html.EscapeString(result.OutputStyle.DocStructurePreference) + "</li>")
+	b.WriteString("<li><strong>细节密度：</strong>" + html.EscapeString(result.OutputStyle.DetailLevel) + "</li>")
+	b.WriteString("<li><strong>邮件回复：</strong>" + html.EscapeString(result.OutputStyle.EmailReplyPattern) + "</li>")
+	b.WriteString("<li><strong>群聊风格：</strong>" + html.EscapeString(result.OutputStyle.ChatReplyPattern) + "</li>")
+	b.WriteString("<li><strong>会议角色：</strong>" + html.EscapeString(result.OutputStyle.MeetingBehavior) + "</li>")
+	b.WriteString("</ul></div>")
+	b.WriteString("<div class=\"section\"><h2>表达指纹</h2><ul class=\"evidence\">")
+	b.WriteString("<li><strong>高频短语：</strong>" + html.EscapeString(strings.Join(result.ExpressionFingerprint.Catchphrases, " / ")) + "</li>")
+	b.WriteString("<li><strong>术语：</strong>" + html.EscapeString(strings.Join(result.ExpressionFingerprint.Jargon, " / ")) + "</li>")
+	b.WriteString("<li><strong>句式：</strong>" + html.EscapeString(result.ExpressionFingerprint.SentencePattern) + "</li>")
+	b.WriteString("<li><strong>Emoji：</strong>" + html.EscapeString(result.ExpressionFingerprint.EmojiHabit) + "</li>")
+	b.WriteString("<li><strong>正式程度：</strong>" + html.EscapeString(result.ExpressionFingerprint.FormalitySpectrum) + "</li>")
+	b.WriteString("<li><strong>回复节奏：</strong>" + html.EscapeString(result.ExpressionFingerprint.ReplySpeedPattern) + "</li>")
+	b.WriteString("<li><strong>分歧表达：</strong>" + html.EscapeString(result.ExpressionFingerprint.ConflictExpression) + "</li>")
+	b.WriteString("</ul></div>")
+	b.WriteString("<div class=\"section\"><h2>知识信号</h2><ul class=\"evidence\">")
+	for _, item := range result.KnowledgeSignals.ExplicitOpinions {
+		b.WriteString("<li><strong>明确观点：</strong>" + html.EscapeString(item) + "</li>")
+	}
+	for _, item := range result.KnowledgeSignals.LearnedLessons {
+		b.WriteString("<li><strong>踩坑经验：</strong>" + html.EscapeString(item) + "</li>")
+	}
+	for _, item := range result.KnowledgeSignals.RepeatedConcerns {
+		b.WriteString("<li><strong>反复强调：</strong>" + html.EscapeString(item) + "</li>")
+	}
+	for _, item := range result.KnowledgeSignals.ReferenceSources {
+		b.WriteString("<li><strong>常引用来源：</strong>" + html.EscapeString(item) + "</li>")
 	}
 	b.WriteString("</ul></div>")
+	if result.InteractionInsights.RelationshipSummary != "" ||
+		len(result.InteractionInsights.CoreCollaborators) > 0 ||
+		len(result.InteractionInsights.FrequentPeople) > 0 ||
+		len(result.InteractionInsights.FrequentChats) > 0 {
+		b.WriteString("<div class=\"section\"><h2>互动关系</h2>")
+		if result.InteractionInsights.RelationshipSummary != "" {
+			b.WriteString("<p>" + html.EscapeString(result.InteractionInsights.RelationshipSummary) + "</p>")
+		}
+		writeInteractionListHTML(&b, "核心协作对象", result.InteractionInsights.CoreCollaborators)
+		writeInteractionListHTML(&b, "高频互动人", result.InteractionInsights.FrequentPeople)
+		writeInteractionListHTML(&b, "高频群聊", result.InteractionInsights.FrequentChats)
+		b.WriteString("</div>")
+	}
+	b.WriteString("<div class=\"section\"><h2>证据</h2><ul class=\"evidence\">")
+	for _, item := range result.Analysis.Evidence {
+		b.WriteString("<li><strong>" + html.EscapeString(strings.Join(item.Domains, "/")) + "</strong>: " + html.EscapeString(item.Behavior) + " | " + html.EscapeString(item.Strength) + "</li>")
+	}
+	b.WriteString("</ul></div>")
+	if len(result.ContrastSignals) > 0 {
+		b.WriteString("<div class=\"section\"><h2>跨域反差点</h2><ul class=\"evidence\">")
+		for _, item := range result.ContrastSignals {
+			b.WriteString("<li>" + html.EscapeString(item) + "</li>")
+		}
+		b.WriteString("</ul></div>")
+	}
 	b.WriteString("<div class=\"section\"><h2>沟通风格</h2><p>" + html.EscapeString(result.Analysis.CommunicationStyle) + "</p></div>")
 	b.WriteString("<div class=\"section\"><h2>工作偏好</h2><p>" + html.EscapeString(result.Analysis.WorkPreferences) + "</p></div>")
 	b.WriteString("<div class=\"section\"><h2>风险与盲区</h2><p>" + html.EscapeString(result.Analysis.BlindSpots) + "</p></div>")
@@ -136,4 +245,25 @@ func renderHTML(result persona.Result) string {
 	b.WriteString("<div class=\"section\"><h2>免责声明</h2><p>" + html.EscapeString(result.Analysis.Disclaimer) + "</p></div>")
 	b.WriteString("</body></html>")
 	return b.String()
+}
+
+func writeInteractionListMarkdown(b *strings.Builder, title string, items []persona.InteractionTarget) {
+	if len(items) == 0 {
+		return
+	}
+	b.WriteString("\n### " + title + "\n")
+	for _, item := range items {
+		b.WriteString("- " + item.DisplayName + ": " + item.Summary + " | " + item.Evidence + "\n")
+	}
+}
+
+func writeInteractionListHTML(b *strings.Builder, title string, items []persona.InteractionTarget) {
+	if len(items) == 0 {
+		return
+	}
+	b.WriteString("<h3>" + html.EscapeString(title) + "</h3><ul class=\"evidence\">")
+	for _, item := range items {
+		b.WriteString("<li><strong>" + html.EscapeString(item.DisplayName) + "</strong>: " + html.EscapeString(item.Summary) + " | " + html.EscapeString(item.Evidence) + "</li>")
+	}
+	b.WriteString("</ul>")
 }

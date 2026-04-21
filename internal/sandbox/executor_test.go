@@ -14,8 +14,26 @@ func TestExecutorAllowsOnlyConfiguredLarkCLICommands(t *testing.T) {
 	if err := exe.Validate([]string{"im", "+messages-search", "--format", "json"}); err != nil {
 		t.Fatalf("expected im search to be allowed: %v", err)
 	}
+	if err := exe.Validate([]string{"im", "+chat-messages-list", "--chat-id", "oc_123", "--format", "json"}); err != nil {
+		t.Fatalf("expected im chat message list to be allowed: %v", err)
+	}
+	if err := exe.Validate([]string{"im", "+chat-search", "--query", "project", "--format", "json"}); err != nil {
+		t.Fatalf("expected im chat search to be allowed: %v", err)
+	}
+	if err := exe.Validate([]string{"im", "chat.members", "get", "--params", `{"chat_id":"oc_123"}`, "--format", "json"}); err != nil {
+		t.Fatalf("expected im chat members get to be allowed: %v", err)
+	}
+	if err := exe.Validate([]string{"im", "chats", "get", "--params", `{"chat_id":"oc_123"}`, "--format", "json"}); err != nil {
+		t.Fatalf("expected im chats get to be allowed: %v", err)
+	}
+	if err := exe.Validate([]string{"contact", "+get-user", "--user-id", "ou_123", "--format", "json"}); err != nil {
+		t.Fatalf("expected contact get-user to be allowed: %v", err)
+	}
 	if err := exe.Validate([]string{"api", "POST", "/open-apis/im/v1/messages"}); err == nil {
 		t.Fatal("expected raw api command to be rejected")
+	}
+	if err := exe.Validate([]string{"im", "+messages-send", "--chat-id", "oc_123", "--text", "hi"}); err == nil {
+		t.Fatal("expected im write command to be rejected")
 	}
 	if err := exe.Validate([]string{"auth", "login", "--device-code", "abc"}); err != nil {
 		t.Fatalf("expected auth device-code to be allowed: %v", err)

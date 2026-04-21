@@ -30,6 +30,7 @@ type Config struct {
 type Client interface {
 	Generate(ctx context.Context, prompt string) (string, error)
 	GenerateWithValidation(ctx context.Context, prompt string, validate func(string) error) (string, error)
+	GenerateWithValidationTrace(ctx context.Context, prompt string, validate func(string) error) (string, string, error)
 }
 
 type adapter interface {
@@ -80,39 +81,45 @@ func (c *chatClient) Generate(ctx context.Context, prompt string) (string, error
 }
 
 func (c *chatClient) GenerateWithValidation(ctx context.Context, prompt string, validate func(string) error) (string, error) {
+	content, _, err := c.GenerateWithValidationTrace(ctx, prompt, validate)
+	return content, err
+}
+
+func (c *chatClient) GenerateWithValidationTrace(ctx context.Context, prompt string, validate func(string) error) (string, string, error) {
 	maxTokens := startingMaxTokens(c.cfg.MaxTokens)
 	requestPrompt := prompt
 	validationAttempts := 0
 	for {
+		lastPrompt := requestPrompt
 		body, err := c.adapter.buildRequestBody(c.cfg, requestPrompt, maxTokens)
 		if err != nil {
-			return "", err
+			return "", lastPrompt, err
 		}
 		raw, err := c.doRequest(ctx, body)
 		if err != nil {
-			return "", err
+			return "", lastPrompt, err
 		}
 		content, ok := extractReportContent(raw)
 		if ok {
 			if validate == nil {
-				return content, nil
+				return content, lastPrompt, nil
 			}
 			if err := validate(content); err == nil {
-				return content, nil
+				return content, lastPrompt, nil
 			} else if validationAttempts == 0 {
 				validationAttempts++
 				requestPrompt = prompt + "\n\n你上一次的输出没有通过校验，原因是：" + err.Error() + "。请重新输出一次，只输出合法 JSON。"
 				continue
 			} else {
-				return "", fmt.Errorf("%s response validation failed: %w", c.adapter.name(), err)
+				return "", lastPrompt, fmt.Errorf("%s response validation failed: %w", c.adapter.name(), err)
 			}
 		}
 		if !c.adapter.shouldRetryEmptyLength(raw) {
-			return "", fmt.Errorf("%s response did not include report content (shape: %s)", c.adapter.name(), responseShape(raw))
+			return "", lastPrompt, fmt.Errorf("%s response did not include report content (shape: %s)", c.adapter.name(), responseShape(raw))
 		}
 		next := retryMaxTokens(maxTokens)
 		if next <= maxTokens {
-			return "", fmt.Errorf("%s response did not include report content (shape: %s)", c.adapter.name(), responseShape(raw))
+			return "", lastPrompt, fmt.Errorf("%s response did not include report content (shape: %s)", c.adapter.name(), responseShape(raw))
 		}
 		maxTokens = next
 	}

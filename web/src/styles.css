@@ -721,6 +721,7 @@ button {
   grid-template-areas:
     'hero vectors'
     'evidence insight'
+    'interaction interaction'
     'footer footer';
   gap: 4rem;
 }
@@ -822,6 +823,10 @@ button {
 
 .report-region-evidence {
   grid-area: evidence;
+}
+
+.report-region-interaction {
+  grid-area: interaction;
 }
 
 .report-region-footer {
@@ -969,8 +974,75 @@ button {
 }
 
 .insight-section,
-.evidence-section {
+.evidence-section,
+.interaction-section {
   padding-top: 0.5rem;
+}
+
+.interaction-summary {
+  margin: 0;
+  color: #a1a1a6;
+  line-height: 1.8;
+  overflow-wrap: anywhere;
+}
+
+.interaction-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.interaction-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  padding: 1rem 1.1rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 1rem;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.interaction-card h3 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.interaction-list {
+  margin: 0;
+  padding-left: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.95rem;
+}
+
+.interaction-list li {
+  color: #a1a1a6;
+}
+
+.interaction-item-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  align-items: baseline;
+  margin-bottom: 0.35rem;
+}
+
+.interaction-item-head strong {
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.interaction-item-head span {
+  color: #86868b;
+  font-size: 0.82rem;
+}
+
+.interaction-list p,
+.interaction-list small,
+.interaction-empty {
+  margin: 0;
+  color: #a1a1a6;
+  line-height: 1.7;
 }
 
 .evidence-list {
@@ -1092,6 +1164,7 @@ button {
       'hero'
       'vectors'
       'insight'
+      'interaction'
       'evidence'
       'footer';
   }
@@ -1103,6 +1176,10 @@ button {
   .persona-art {
     max-width: min(100%, 320px);
     max-height: min(24vh, 260px);
+  }
+
+  .interaction-grid {
+    grid-template-columns: 1fr;
   }
 }
 

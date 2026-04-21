@@ -22,6 +22,10 @@ func progressForStatus(status session.Status) progressView {
 		return progressView{Stage: string(status), Label: "正在生成结构化 BSTI 报告", Percent: 86}
 	case session.StatusDone:
 		return progressView{Stage: string(status), Label: "报告已生成", Percent: 100}
+	case session.StatusAuthFailed:
+		return progressView{Stage: string(status), Label: "授权流程失败，请重新连接飞书", Percent: 100}
+	case session.StatusAnalysisFailed:
+		return progressView{Stage: string(status), Label: "分析流程失败，可直接重试分析", Percent: 100}
 	case session.StatusFailed:
 		return progressView{Stage: string(status), Label: "流程执行失败", Percent: 100}
 	default:
@@ -39,6 +43,10 @@ func nextActionForStatus(status session.Status) string {
 		return "wait"
 	case session.StatusDone:
 		return "view_report"
+	case session.StatusAnalysisFailed:
+		return "start_analysis"
+	case session.StatusAuthFailed:
+		return "complete_authorization"
 	case session.StatusFailed:
 		return "retry"
 	default:

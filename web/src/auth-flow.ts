@@ -10,6 +10,7 @@ export type AuthFlowPhase =
   | 'authenticated'
   | 'failed_step_1'
   | 'failed_step_2'
+  | 'analysis_failed'
 
 export type AuthPrimaryAction = 'connect' | 'open_url' | 'analyze' | 'wait'
 
@@ -138,13 +139,31 @@ export function buildAuthFlowViewModel(options: AuthFlowViewModelOptions): AuthF
     }
   }
 
-  if (status === 'failed') {
+  if (status === 'analysis_failed') {
+    return {
+      phase: 'analysis_failed',
+      eyebrow: '分析流程失败',
+      title: '分析失败',
+      description: '授权已完成，但分析流程执行失败。你可以直接重试分析，无需重新授权。',
+      icon: '×',
+      primaryLabel: busyAction === 'analyze' ? '正在重新提交分析...' : '重新开始分析',
+      primaryAction: 'analyze',
+      primaryDisabled: busyAction === 'analyze',
+      showReset: true,
+      steps: buildSteps({
+        firstStepState: appConfigRequired ? 'done' : 'preconfigured',
+        secondStepState: 'done',
+      }),
+    }
+  }
+
+  if (status === 'auth_failed' || status === 'failed') {
     const failedStepTwo = reachedStepTwo
 
     return {
       phase: failedStepTwo ? 'failed_step_2' : 'failed_step_1',
       eyebrow: failedStepTwo ? '第 2 步失败' : '第 1 步失败',
-      title: failedStepTwo ? '第二步授权失败' : '连接失败',
+      title: failedStepTwo ? '授权失败' : '连接失败',
       description: failedStepTwo
         ? '第一步配置已完成，但第二步飞书授权未成功。请重新完成授权。'
         : '无法完成飞书配置流程，请重试或新建会话。',
@@ -178,7 +197,7 @@ export function buildAuthFlowViewModel(options: AuthFlowViewModelOptions): AuthF
     primaryLabel: busyAction === 'login' ? '正在准备授权...' : '连接我的飞书',
     primaryAction: 'connect',
     primaryDisabled: busyAction === 'login',
-    showReset: false,
+    showReset: Boolean(sessionId),
     steps: buildSteps({
       firstStepState: appConfigRequired ? 'pending' : 'preconfigured',
       secondStepState: 'pending',
