@@ -1,0 +1,5 @@
+# TODO: replace <your-function-id> with your real function id.
+id: <your-function-id>
+runtime: native/v1
+protocol: http
+description: feishu personality agent on bytefaas native

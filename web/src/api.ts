@@ -1,9 +1,19 @@
 import type { ReportData, SessionStatusResponse } from './types'
 
+export class RequestError extends Error {
+  status: number
+
+  constructor(message: string, status: number) {
+    super(message)
+    this.name = 'RequestError'
+    this.status = status
+  }
+}
+
 async function decode<T>(response: Response): Promise<T> {
   const data = (await response.json()) as T & { error?: string }
   if (!response.ok) {
-    throw new Error(data.error || `Request failed with status ${response.status}`)
+    throw new RequestError(data.error || `Request failed with status ${response.status}`, response.status)
   }
   return data
 }

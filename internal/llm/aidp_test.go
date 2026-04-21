@@ -215,7 +215,7 @@ func TestAIDPClientRetriesOnceWhenValidatorRejectsOutput(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	report, err := client.GenerateWithValidation(context.Background(), "analysis input", func(content string) error {
+	report, lastPrompt, err := client.GenerateWithValidationTrace(context.Background(), "analysis input", func(content string) error {
 		if !strings.Contains(content, `"primary_persona":"PRISM"`) {
 			return fmt.Errorf("primary_persona must be one of the BSPI catalog values")
 		}
@@ -232,6 +232,9 @@ func TestAIDPClientRetriesOnceWhenValidatorRejectsOutput(t *testing.T) {
 	}
 	if !strings.Contains(prompts[1], "没有通过校验") {
 		t.Fatalf("retry prompt = %q", prompts[1])
+	}
+	if lastPrompt != prompts[1] {
+		t.Fatalf("lastPrompt = %q, want %q", lastPrompt, prompts[1])
 	}
 }
 

@@ -1,25 +1,25 @@
 package server
 
 import (
-	"os"
-	"path/filepath"
+	"net/http"
 
+	agentassets "feishu-personality-agent"
 	"github.com/gin-gonic/gin"
 )
 
-func frontendDistDir() string {
-	return filepath.Join("web", "dist")
+func frontendAssetsFS() http.FileSystem {
+	return agentassets.FrontendAssetsFS()
 }
 
-func frontendAssetsDir() string {
-	return filepath.Join(frontendDistDir(), "app-assets")
+func photosFS() http.FileSystem {
+	return agentassets.PhotosFS()
 }
 
 func serveFrontendIndex(c *gin.Context) bool {
-	indexPath := filepath.Join(frontendDistDir(), "index.html")
-	if _, err := os.Stat(indexPath); err != nil {
+	indexHTML, err := agentassets.FrontendIndex()
+	if err != nil || len(indexHTML) == 0 {
 		return false
 	}
-	c.File(indexPath)
+	c.Data(http.StatusOK, "text/html; charset=utf-8", indexHTML)
 	return true
 }

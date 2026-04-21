@@ -3,18 +3,34 @@ import { startTransition, useEffect, useRef, useState } from 'react'
 import type { RefObject } from 'react'
 import { LandingPage } from './landing-auth'
 import {
+  RequestError,
   analyzeSession,
   createSession,
   getReportData,
   getSessionStatus,
   startLogin,
 } from './api'
+import {
+  clearPersistedSessionId,
+  loadPersistedSessionId,
+  persistSessionId,
+} from './session-persistence'
 import type {
+  EvidenceItem,
+  InteractionTarget,
   ReportData,
   SessionEvent,
   SessionStatus,
   SessionStatusResponse,
 } from './types'
+
+function isStoppedStatus(status: SessionStatus) {
+  return ['authenticated', 'collecting', 'analyzing', 'done', 'auth_failed', 'analysis_failed', 'failed'].includes(status)
+}
+
+function isTerminalStatus(status: SessionStatus) {
+  return ['done', 'auth_failed', 'analysis_failed', 'failed'].includes(status)
+}
 
 function App() {
   const [sessionId, setSessionId] = useState('')
@@ -51,7 +67,7 @@ function App() {
       const next = await getSessionStatus(sessionId)
       setStatusData(next)
 
-      if (['authenticated', 'collecting', 'analyzing', 'done', 'failed'].includes(next.status)) {
+      if (isStoppedStatus(next.status)) {
         clearAuthorizationReturnCheck()
         return next
       }
@@ -69,19 +85,64 @@ function App() {
     }
   }
 
-  async function bootstrapSession() {
+  async function restoreSession(candidateSessionId: string) {
+    setSessionId(candidateSessionId)
+
+    try {
+      const status = await getSessionStatus(candidateSessionId)
+      setStatusData(status)
+      setUiError('')
+      clearAuthorizationReturnCheck()
+      return true
+    } catch (error) {
+      if (error instanceof RequestError && error.status === 404) {
+        clearPersistedSessionId()
+        setSessionId('')
+        setStatusData(null)
+        return false
+      }
+
+      setUiError(toMessage(error))
+      setStatusData(null)
+      return true
+    }
+  }
+
+  async function createFreshSession() {
+    const created = await createSession()
+    persistSessionId(created.session_id)
+    setSessionId(created.session_id)
+    const status = await getSessionStatus(created.session_id)
+    setStatusData(status)
+    setUiError('')
+    clearAuthorizationReturnCheck()
+  }
+
+  async function bootstrapSession(options?: { forceNew?: boolean }) {
+    const forceNew = options?.forceNew ?? false
+
     setBooting(true)
     setBusyAction('session')
     setUiError('')
     setPosterNotice('')
     setReportData(null)
+    setStatusData(null)
 
     try {
-      const created = await createSession()
-      setSessionId(created.session_id)
-      const status = await getSessionStatus(created.session_id)
-      setStatusData(status)
-      clearAuthorizationReturnCheck()
+      if (forceNew) {
+        clearPersistedSessionId()
+        setSessionId('')
+      } else {
+        const persistedSessionId = loadPersistedSessionId()
+        if (persistedSessionId) {
+          const restored = await restoreSession(persistedSessionId)
+          if (restored) {
+            return
+          }
+        }
+      }
+
+      await createFreshSession()
     } catch (error) {
       setUiError(toMessage(error))
     } finally {
@@ -102,7 +163,7 @@ function App() {
     if (!sessionId || !statusData) {
       return
     }
-    if (statusData.status === 'done' || statusData.status === 'failed') {
+    if (isTerminalStatus(statusData.status)) {
       return
     }
 
@@ -160,7 +221,7 @@ function App() {
       return
     }
     setDisplayedProgress((current) => {
-      if (statusData.status === 'failed') {
+      if (['auth_failed', 'analysis_failed', 'failed'].includes(statusData.status)) {
         return current
       }
       return Math.max(current, Math.min(statusData.progress.percent, 97))
@@ -289,7 +350,7 @@ function App() {
             onAnalyze={handleAnalyze}
             onConnect={handleConnect}
             onOpenVerificationURL={handleOpenVerificationURL}
-            onReset={() => void bootstrapSession()}
+            onReset={() => void bootstrapSession({ forceNew: true })}
           />
         ) : null}
 
@@ -312,7 +373,7 @@ function App() {
             sessionId={sessionId}
             onAnalyze={handleAnalyze}
             onDownloadPoster={handlePosterDownload}
-            onReset={() => void bootstrapSession()}
+            onReset={() => void bootstrapSession({ forceNew: true })}
           />
         ) : null}
       </main>
@@ -407,10 +468,17 @@ function ResultPage(props: ResultPageProps) {
     onReset,
   } = props
   const persona = report.primary_persona
+  const interactionInsights = report.interaction_insights ?? {
+    relationship_summary: '',
+    core_collaborators: [],
+    frequent_people: [],
+    frequent_chats: [],
+  }
   const { frontDisclaimer, footerDisclaimer } = splitDisclaimers(
     report.share_card.disclaimer_short,
     report.analysis.disclaimer,
   )
+  const contrastSignals = report.contrast_signals ?? []
 
   return (
     <section className="result-page">
@@ -418,7 +486,7 @@ function ResultPage(props: ResultPageProps) {
         <div className="result-brand">BSTI 2026</div>
         <div className="result-header-actions">
           <button className="secondary-button" onClick={onReset}>
-            新建会话
+            切换账号 / 新建会话
           </button>
           <a
             className="text-link"
@@ -511,14 +579,130 @@ function ResultPage(props: ResultPageProps) {
             </div>
           </section>
 
+          <section className="editorial-section report-region">
+            <div className="section-kicker">Work Profile</div>
+            <h2>工作画像</h2>
+            <dl className="insight-list">
+              <div>
+                <dt>负责范围</dt>
+                <dd>{report.work_profile.responsibility_scope}</dd>
+              </div>
+              <div>
+                <dt>典型路径</dt>
+                <dd>{report.work_profile.typical_workflow}</dd>
+              </div>
+              <div>
+                <dt>文档风格</dt>
+                <dd>{report.work_profile.doc_writing_style}</dd>
+              </div>
+              <div>
+                <dt>决策模式</dt>
+                <dd>{report.work_profile.decision_making_pattern}</dd>
+              </div>
+              <div>
+                <dt>领域关键词</dt>
+                <dd>{report.work_profile.tech_stack_or_domain.join(' / ')}</dd>
+              </div>
+              <div>
+                <dt>输出结构</dt>
+                <dd>{report.output_style.doc_structure_preference}</dd>
+              </div>
+              <div>
+                <dt>细节密度</dt>
+                <dd>{report.output_style.detail_level}</dd>
+              </div>
+              <div>
+                <dt>邮件回复</dt>
+                <dd>{report.output_style.email_reply_pattern}</dd>
+              </div>
+              <div>
+                <dt>群聊风格</dt>
+                <dd>{report.output_style.chat_reply_pattern}</dd>
+              </div>
+              <div>
+                <dt>会议角色</dt>
+                <dd>{report.output_style.meeting_behavior}</dd>
+              </div>
+            </dl>
+          </section>
+
+          <section className="editorial-section report-region">
+            <div className="section-kicker">Expression</div>
+            <h2>表达指纹</h2>
+            <dl className="insight-list">
+              <div>
+                <dt>高频短语</dt>
+                <dd>{report.expression_fingerprint.catchphrases.join(' / ')}</dd>
+              </div>
+              <div>
+                <dt>术语习惯</dt>
+                <dd>{report.expression_fingerprint.jargon.join(' / ')}</dd>
+              </div>
+              <div>
+                <dt>句式特征</dt>
+                <dd>{report.expression_fingerprint.sentence_pattern}</dd>
+              </div>
+              <div>
+                <dt>Emoji 习惯</dt>
+                <dd>{report.expression_fingerprint.emoji_habit}</dd>
+              </div>
+              <div>
+                <dt>正式程度</dt>
+                <dd>{report.expression_fingerprint.formality_spectrum}</dd>
+              </div>
+              <div>
+                <dt>回复节奏</dt>
+                <dd>{report.expression_fingerprint.reply_speed_pattern}</dd>
+              </div>
+              <div>
+                <dt>分歧表达</dt>
+                <dd>{report.expression_fingerprint.conflict_expression}</dd>
+              </div>
+            </dl>
+          </section>
+
+          <section className="editorial-section report-region">
+            <div className="section-kicker">Knowledge</div>
+            <h2>知识信号</h2>
+            <div className="interaction-grid">
+              <SignalList title="明确观点" items={report.knowledge_signals.explicit_opinions} />
+              <SignalList title="踩坑经验" items={report.knowledge_signals.learned_lessons} />
+              <SignalList title="反复强调" items={report.knowledge_signals.repeated_concerns} />
+              <SignalList title="常引用来源" items={report.knowledge_signals.reference_sources} />
+            </div>
+          </section>
+
+          <section className="editorial-section interaction-section report-region report-region-interaction">
+            <div className="section-kicker">Connections</div>
+            <h2>互动关系</h2>
+            <p className="interaction-summary">
+              {interactionInsights.relationship_summary || '当前授权数据里还没有形成稳定的互动关系信号。'}
+            </p>
+            <div className="interaction-grid">
+              <InteractionList title="核心协作对象" items={interactionInsights.core_collaborators} />
+              <InteractionList title="高频互动人" items={interactionInsights.frequent_people} />
+              <InteractionList title="高频群聊" items={interactionInsights.frequent_chats} />
+            </div>
+          </section>
+
           <section className="editorial-section evidence-section report-region report-region-evidence">
             <div className="section-kicker">Coverage</div>
             <h2>证据与覆盖</h2>
             <ul className="evidence-list">
               {report.analysis.evidence.map((item) => (
-                <li key={item}>{item}</li>
+                <EvidenceRow item={item} key={`${item.behavior}-${item.strength}`} />
               ))}
             </ul>
+            {contrastSignals.length > 0 ? (
+              <>
+                <h3>跨域反差点</h3>
+                <ul className="evidence-list">
+                  {contrastSignals.map((item) => (
+                    <li key={item}>{item}</li>
+                  ))}
+                </ul>
+              </>
+            ) : null}
             <p className="coverage-summary">{report.coverage.summary}</p>
             <div className="coverage-meta">
               <div className="coverage-item">
@@ -552,6 +736,62 @@ function ResultPage(props: ResultPageProps) {
       {posterNotice ? <div className="notice-banner">{posterNotice}</div> : null}
       {error ? <div className="error-banner">{error}</div> : null}
     </section>
+  )
+}
+
+function InteractionList(props: { title: string; items: InteractionTarget[] }) {
+  const { title, items } = props
+  return (
+    <article className="interaction-card">
+      <h3>{title}</h3>
+      {items.length === 0 ? (
+        <p className="interaction-empty">当前授权数据里还没有形成稳定信号。</p>
+      ) : (
+        <ul className="interaction-list">
+          {items.map((item) => (
+            <li key={`${title}-${item.display_name}-${item.summary}`}>
+              <div className="interaction-item-head">
+                <strong>{item.display_name}</strong>
+              </div>
+              <p>{item.summary}</p>
+              <small>{item.evidence}</small>
+            </li>
+          ))}
+        </ul>
+      )}
+    </article>
+  )
+}
+
+function SignalList(props: { title: string; items: string[] }) {
+  const { title, items } = props
+  return (
+    <article className="interaction-card">
+      <h3>{title}</h3>
+      {items.length === 0 ? (
+        <p className="interaction-empty">当前授权数据里还没有形成稳定信号。</p>
+      ) : (
+        <ul className="interaction-list">
+          {items.map((item) => (
+            <li key={`${title}-${item}`}>
+              <p>{item}</p>
+            </li>
+          ))}
+        </ul>
+      )}
+    </article>
+  )
+}
+
+function EvidenceRow(props: { item: EvidenceItem }) {
+  const { item } = props
+  return (
+    <li>
+      <strong>{item.domains.join(' / ')}</strong>
+      {`: ${item.behavior} | ${item.strength}`}
+      {item.is_cross_domain ? ' | 跨域一致' : ''}
+      {item.is_distinctive ? ' | 区分性信号' : ''}
+    </li>
   )
 }
 
@@ -597,6 +837,10 @@ function friendlyStatus(status: SessionStatus) {
       return '人格分析'
     case 'done':
       return '已完成'
+    case 'auth_failed':
+      return '授权失败'
+    case 'analysis_failed':
+      return '分析失败'
     case 'failed':
       return '失败'
     default:

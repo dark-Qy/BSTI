@@ -1,6 +1,6 @@
 # Feishu Personality Agent
 
-Local web agent for collecting authorized Feishu data through `lark-cli` and generating a BSTI Top1 persona report with the configured LLM chat endpoint.
+Local web agent for collecting authorized Feishu data through `lark-cli` and generating a BSTI Top1 persona report with the configured LLM chat endpoint. The collector now uses broader read-only chat access so it can anchor on the user's own messages, extract compact causal-chain context, filter noisy groups, and combine that chat evidence with prioritized document reads.
 
 The current UI is a React/Vite single-page app served by the Go HTTP service. It guides users through three stages:
 
@@ -32,7 +32,24 @@ go run ./cmd/agent
 
 The report is not a psychological diagnosis. It is a behavior-style summary based only on the data the user explicitly authorized.
 
+The report now uses a dual-track portrait:
+
+- a single BSPI Top1 persona as the headline conclusion
+- a structured behavior and work fingerprint layer that explains how this person works, expresses, and makes decisions
+
+The login flow now requests one-time read-only access for chat search plus chat history reads, together with the existing docs/calendar/task/mail/vc scopes. No Feishu write capability is introduced.
+
+Chat relationship analysis now prefers the user's own speech over passive message visibility:
+
+- initial chat search is scoped to messages authored by the authenticated user
+- obvious non-work groups are filtered by a local keyword blacklist
+- retained chats are enriched with bounded history reads fetched through explicit `+chat-messages-list` page-token pagination
+- P2P keeps the counterpart trigger message block before each user reply, while groups keep one recent topic anchor plus inline role markers such as `[回应他人]` and `[被@后回复]`
+- interaction evidence is built from the user's message plus compact trigger/topic context, with P2P weighted ahead of groups
+
 Each session stores and uses its own private `lark-cli` config directory. The service never reuses another session's Feishu app configuration or user authorization. The only skip path is service-side preconfiguration through `LARK_APP_ID` and `LARK_APP_SECRET`, which lets every new session start directly from browser authorization.
+
+The browser now persists only the current local `session_id` reference in `localStorage`; it does not store the Feishu OAuth token itself. Refreshing or reopening the same browser can resume the existing session and continue analysis without reauthorizing, while different browsers or browser profiles remain isolated. If the stored session no longer exists on the server, the frontend clears that stale reference and transparently creates a new session. Shared-browser handoff is handled through the explicit "切换账号 / 新建会话" action.
 
 ## Configuration
 
@@ -67,8 +84,8 @@ The service also reads these optional runtime environment variables:
 
 ```dotenv
 LARK_CLI_BIN=lark-cli
-AGENT_DATA_DIR=./data
-HTTP_ADDR=127.0.0.1:8787
+AGENT_DATA_DIR=/tmp/byte-agent-data
+HTTP_ADDR=0.0.0.0:8787
 ```
 
 ## BOE Deployment
@@ -96,11 +113,11 @@ Recommended TCE runtime settings:
 - health check: `GET /healthz` on port `8787`
 - runtime env: provide the required `LLM_*` variables and any optional Feishu app credentials through TCE environment variables
 
-`bootstrap.sh` keeps local development defaults untouched in Go code while making the deployed service TCE-friendly:
+`bootstrap.sh` keeps runtime defaults TCE-friendly:
 
 - binds to `0.0.0.0:8787` when `HTTP_ADDR` is unset
-- stores runtime session files under `<deploy-root>/data` when `AGENT_DATA_DIR` is unset
-- starts from the packaged app directory so `photos/` static assets keep working
+- stores runtime session files under `/tmp/byte-agent-data` when `AGENT_DATA_DIR` is unset
+- launches the compiled binary with embedded frontend and photo assets
 
 The packaged service still expects `lark-cli` to be available in the runtime image or environment.
 
@@ -115,15 +132,70 @@ The packaged service still expects `lark-cli` to be available in the runtime ima
 - `GET /api/sessions/{id}/report-data` returns the structured JSON report consumed by the React frontend. It includes:
   - `primary_persona`
   - `analysis`
+  - `work_profile`
+  - `expression_fingerprint`
+  - `output_style`
+  - `knowledge_signals`
   - `highlight_tags`
   - `behavior_vectors`
+  - `interaction_insights`
+  - `contrast_signals`
   - `share_card`
   - `coverage`
 - `GET /assets/photos/{SHORTHAND}.png` serves the local persona art used by the home page and report page.
 
-`behavior_vectors` is a fixed 4-item array of work-style signals:
+The frontend startup flow is "restore first, create as fallback":
+
+- load the persisted `session_id` from browser `localStorage` when available
+- restore with `GET /api/sessions/{id}/status`
+- clear the stale browser reference and create a new session only when that restore returns `404`
+- keep other restore errors visible to the user instead of silently replacing the session
+
+Session status values now distinguish authorization failures from analysis failures:
+
+- `auth_failed`: the authorization chain failed before analysis could start, such as app setup, login start, or Feishu authorization errors
+- `analysis_failed`: authorization completed, but downstream collection or report generation failed and the user can retry analysis without reauthorizing
+- legacy `failed` sessions are still accepted for compatibility and are rendered as a generic authorization-style failure until they are replaced by a new session run
+
+`behavior_vectors` is a fixed 6-item array of work-style signals:
 
 - `协作方式`: `独立成局` ↔ `高频协同`
 - `表达风格`: `克制压缩` ↔ `高频输出`
 - `决策路径`: `证据校准` ↔ `直觉快判`
 - `推进节奏`: `稳态推进` ↔ `高压突进`
+- `信息处理`: `深度聚焦` ↔ `广度扫描`
+- `风险态度`: `防御优先` ↔ `进攻优先`
+
+`interaction_insights` is an additive structured block:
+
+- `relationship_summary`
+- `core_collaborators`
+- `frequent_people`
+- `frequent_chats`
+
+Each list item includes `display_name`, `summary`, and `evidence`.
+The final JSON/HTML/Markdown outputs do not expose internal identifiers such as `open_id` or `chat_id`, and `frequent_chats` is reserved for group-chat signals rather than direct-message analysis.
+
+`analysis.evidence` is now a structured array rather than plain strings. Each item includes:
+
+- `domains`
+- `behavior`
+- `strength`
+- `is_cross_domain`
+- `is_distinctive`
+
+The result page now adds three portrait modules:
+
+- `工作画像`
+- `表达指纹`
+- `知识信号`
+
+When the model finds cross-domain contradictions, notable contrast points, or the key reason for rejecting the second-closest persona candidate, it can also return `contrast_signals`.
+
+Document collection now uses a two-source rule before body fetch:
+
+- current-user-created docs: up to 10, filtered through `creator_ids=[current user open_id]`
+- recently browsed docs: up to 20
+- merged and deduplicated for indexing/reference, while bounded `docs +fetch` now reads the first 10 current-user-created documents
+- the final analysis prompt keeps cleaned raw `chat`, raw `docs` / `docs_content` / `task`, while `calendar`, `vc`, and filtered `mail` / `mail_content` are injected as JSON blocks that preserve the original top-level wrapper but drop prompt-irrelevant IDs, links, version notices, avatars, and similar noisy metadata
+- docs content remains the higher-priority long-horizon signal during analysis

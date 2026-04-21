@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -23,7 +24,7 @@ import (
 	"feishu-personality-agent/internal/session"
 )
 
-const readOnlyScopes = "search:message contact:user.basic_profile:readonly search:docs:read docx:document:readonly calendar:calendar.event:read task:task:read mail:user_mailbox.message:readonly mail:user_mailbox.message.address:read mail:user_mailbox.message.subject:read mail:user_mailbox.message.body:read vc:meeting.search:read vc:meeting.meetingevent:read vc:note:read"
+const readOnlyScopes = "search:message im:message:readonly im:chat:readonly contact:user.basic_profile:readonly search:docs:read docx:document:readonly calendar:calendar.event:read task:task:read mail:user_mailbox.message:readonly mail:user_mailbox.message.address:read mail:user_mailbox.message.subject:read mail:user_mailbox.message.body:read vc:meeting.search:read vc:meeting.meetingevent:read vc:note:read"
 
 var urlPattern = regexp.MustCompile(`https?://\S+`)
 
@@ -61,8 +62,8 @@ func New(cfg ServerConfig) *Server {
 	}
 	r := gin.New()
 	r.Use(gin.Recovery())
-	r.StaticFS("/app-assets", gin.Dir(frontendAssetsDir(), false))
-	r.StaticFS("/assets/photos", gin.Dir("photos", false))
+	r.StaticFS("/app-assets", frontendAssetsFS())
+	r.StaticFS("/assets/photos", photosFS())
 	r.GET("/healthz", s.healthz)
 	r.GET("/", s.index)
 	r.POST("/api/sessions", s.createSession)
@@ -107,7 +108,7 @@ func (s *Server) login(c *gin.Context) {
 	}
 	url, err := s.loginStarter(c.Request.Context(), item)
 	if err != nil {
-		recordStatus(item, session.StatusFailed, "启动登录流程失败")
+		recordStatus(item, session.StatusAuthFailed, "启动登录流程失败")
 		item.Error = err.Error()
 		_ = s.store.Save(item)
 		writeError(c, http.StatusInternalServerError, err)
@@ -155,7 +156,7 @@ func (s *Server) analyze(c *gin.Context) {
 	}
 	go func() {
 		if err := s.analyzer(context.Background(), item); err != nil {
-			recordStatus(item, session.StatusFailed, "分析流程执行失败")
+			recordStatus(item, session.StatusAnalysisFailed, "分析流程执行失败")
 			item.Error = err.Error()
 			_ = s.store.Save(item)
 		}
@@ -301,7 +302,7 @@ func (s *Server) waitConfigThenStartOAuth(cmd *exec.Cmd, cancel context.CancelFu
 	if err := cmd.Wait(); err != nil {
 		current, loadErr := s.store.Get(sessionID)
 		if loadErr == nil {
-			recordStatus(current, session.StatusFailed, "飞书应用配置失败")
+			recordStatus(current, session.StatusAuthFailed, "飞书应用配置失败")
 			current.Error = err.Error()
 			_ = s.store.Save(current)
 		}
@@ -312,7 +313,7 @@ func (s *Server) waitConfigThenStartOAuth(cmd *exec.Cmd, cancel context.CancelFu
 		return
 	}
 	if _, err := s.startOAuthLogin(context.Background(), current); err != nil {
-		recordStatus(current, session.StatusFailed, "启动飞书授权失败")
+		recordStatus(current, session.StatusAuthFailed, "启动飞书授权失败")
 		current.Error = err.Error()
 		_ = s.store.Save(current)
 	}
@@ -344,7 +345,7 @@ func (s *Server) startOAuthLogin(ctx context.Context, item *session.Session) (st
 			return
 		}
 		if pollErr != nil {
-			recordStatus(current, session.StatusFailed, "飞书授权失败")
+			recordStatus(current, session.StatusAuthFailed, "飞书授权失败")
 			current.Error = pollErr.Error()
 			_ = pollOut
 		} else {
@@ -378,6 +379,9 @@ func (s *Server) runAnalysis(ctx context.Context, item *session.Session) error {
 	if err != nil {
 		return err
 	}
+	if err := writeAnalysisDigestsLog(item.Dir, bundle.AnalysisInput); err != nil {
+		return err
+	}
 	recordStatus(item, session.StatusAnalyzing, "正在调用 AIDP 生成结构化 BSTI 报告")
 	if err := s.store.Save(item); err != nil {
 		return err
@@ -394,10 +398,15 @@ func (s *Server) runAnalysis(ctx context.Context, item *session.Session) error {
 	if err != nil {
 		return err
 	}
-	output, err := client.GenerateWithValidation(ctx, prompt, func(content string) error {
+	output, finalPrompt, err := client.GenerateWithValidationTrace(ctx, prompt, func(content string) error {
 		_, parseErr := persona.ParseLLMResult(content)
 		return parseErr
 	})
+	if strings.TrimSpace(finalPrompt) != "" {
+		if err := writeAnalysisPromptLog(item.Dir, finalPrompt); err != nil {
+			return err
+		}
+	}
 	if err != nil {
 		return err
 	}
@@ -406,6 +415,7 @@ func (s *Server) runAnalysis(ctx context.Context, item *session.Session) error {
 		return err
 	}
 	result.Coverage = collector.Coverage(bundle)
+	result = persona.SanitizeResult(result)
 	paths, err := report.WriteLocal(item.Dir, result)
 	if err != nil {
 		return err
@@ -447,8 +457,29 @@ func writeCLIConfig(sessionDir string, feishu config.FeishuConfig) error {
 	return os.WriteFile(filepath.Join(cliDir, "config.json"), append(data, '\n'), 0600)
 }
 
+func writeAnalysisDigestsLog(sessionDir string, input collector.AnalysisInput) error {
+	logDir := filepath.Join(sessionDir, "logs")
+	if err := os.MkdirAll(logDir, 0700); err != nil {
+		return err
+	}
+	data, err := json.MarshalIndent(input, "", "  ")
+	if err != nil {
+		return err
+	}
+	data = append(data, '\n')
+	return os.WriteFile(filepath.Join(logDir, "analysis-domain-digests.json"), data, 0600)
+}
+
 func writeError(c *gin.Context, status int, err error) {
 	c.JSON(status, gin.H{"error": err.Error()})
+}
+
+func writeAnalysisPromptLog(sessionDir, prompt string) error {
+	logDir := filepath.Join(sessionDir, "logs")
+	if err := os.MkdirAll(logDir, 0700); err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(logDir, "analysis-prompt.txt"), []byte(prompt), 0600)
 }
 
 func primaryPersonaSummary(item *session.Session) any {
@@ -459,11 +490,48 @@ func primaryPersonaSummary(item *session.Session) any {
 }
 
 func normalizeReportResult(result persona.Result) persona.Result {
+	result = persona.SanitizeResult(result)
+	if result.Analysis.Evidence == nil {
+		result.Analysis.Evidence = []persona.EvidenceItem{}
+	}
+	if result.WorkProfile.TechStackOrDomain == nil {
+		result.WorkProfile.TechStackOrDomain = []string{}
+	}
+	if result.ExpressionFingerprint.Catchphrases == nil {
+		result.ExpressionFingerprint.Catchphrases = []string{}
+	}
+	if result.ExpressionFingerprint.Jargon == nil {
+		result.ExpressionFingerprint.Jargon = []string{}
+	}
+	if result.KnowledgeSignals.ExplicitOpinions == nil {
+		result.KnowledgeSignals.ExplicitOpinions = []string{}
+	}
+	if result.KnowledgeSignals.LearnedLessons == nil {
+		result.KnowledgeSignals.LearnedLessons = []string{}
+	}
+	if result.KnowledgeSignals.RepeatedConcerns == nil {
+		result.KnowledgeSignals.RepeatedConcerns = []string{}
+	}
+	if result.KnowledgeSignals.ReferenceSources == nil {
+		result.KnowledgeSignals.ReferenceSources = []string{}
+	}
 	if result.HighlightTags == nil {
 		result.HighlightTags = []string{}
 	}
 	if result.BehaviorVectors == nil {
 		result.BehaviorVectors = []persona.BehaviorVector{}
+	}
+	if result.ContrastSignals == nil {
+		result.ContrastSignals = []string{}
+	}
+	if result.InteractionInsights.CoreCollaborators == nil {
+		result.InteractionInsights.CoreCollaborators = []persona.InteractionTarget{}
+	}
+	if result.InteractionInsights.FrequentPeople == nil {
+		result.InteractionInsights.FrequentPeople = []persona.InteractionTarget{}
+	}
+	if result.InteractionInsights.FrequentChats == nil {
+		result.InteractionInsights.FrequentChats = []persona.InteractionTarget{}
 	}
 	if result.Coverage.SuccessfulDomains == nil {
 		result.Coverage.SuccessfulDomains = []string{}
@@ -550,7 +618,7 @@ var indexHTML = `<!doctype html>
         card.style.display = "block";
         card.innerHTML = '<div style="display:grid;grid-template-columns:120px 1fr;gap:16px;align-items:center;border:1px solid #ddd;border-radius:8px;padding:16px;margin:16px 0"><img src="' + data.primary_persona.image_url + '" alt="' + data.primary_persona.shorthand + '" style="width:120px;height:auto;border-radius:8px"><div><div style="font-size:12px;color:#666">BSTI Top1 Persona</div><div style="font-weight:700;font-size:20px">' + data.primary_persona.shorthand + ' / ' + data.primary_persona.chinese_label + '</div><div style="margin-top:6px">' + data.primary_persona.one_liner + '</div></div></div>';
       }
-      if (!["done", "failed"].includes(data.status)) setTimeout(poll, 2000);
+      if (!["done", "auth_failed", "analysis_failed", "failed"].includes(data.status)) setTimeout(poll, 2000);
     }
   </script>
 </body>

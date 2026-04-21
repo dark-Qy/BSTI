@@ -51,7 +51,7 @@ func TestLoadRequiresProvider(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected missing provider error")
 	}
-	if err.Error() != "missing LLM_PROVIDER in .env" {
+	if err.Error() != "missing LLM_PROVIDER or CUSTOM_LLM_PROVIDER in env or .env" {
 		t.Fatalf("error = %q", err.Error())
 	}
 }
@@ -103,6 +103,75 @@ func TestLoadKeepsLargerConfiguredMaxTokens(t *testing.T) {
 		t.Fatal(err)
 	}
 	if cfg.LLM.MaxTokens != 12000 {
+		t.Fatalf("MaxTokens = %d", cfg.LLM.MaxTokens)
+	}
+}
+
+func TestLoadFallsBackToCustomLLMEnvAndFaaSDefaults(t *testing.T) {
+	t.Setenv("CUSTOM_LLM_PROVIDER", "kimi")
+	t.Setenv("CUSTOM_LLM_API_URL", "https://api.moonshot.cn/v1/chat/completions")
+	t.Setenv("CUSTOM_LLM_API_KEY", "Bearer custom-test-key")
+	t.Setenv("CUSTOM_LLM_MODEL", "kimi-k2.5")
+	t.Setenv("CUSTOM_LLM_MAX_TOKENS", "9000")
+
+	cfg, err := Load(filepath.Join(t.TempDir(), ".env"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if cfg.LLM.Provider != ProviderKimi {
+		t.Fatalf("Provider = %q", cfg.LLM.Provider)
+	}
+	if cfg.LLM.APIURL != "https://api.moonshot.cn/v1/chat/completions" {
+		t.Fatalf("APIURL = %q", cfg.LLM.APIURL)
+	}
+	if cfg.LLM.APIKey != "Bearer custom-test-key" {
+		t.Fatalf("APIKey = %q", cfg.LLM.APIKey)
+	}
+	if cfg.LLM.Model != "kimi-k2.5" {
+		t.Fatalf("Model = %q", cfg.LLM.Model)
+	}
+	if cfg.LLM.MaxTokens != 9000 {
+		t.Fatalf("MaxTokens = %d", cfg.LLM.MaxTokens)
+	}
+	if cfg.AgentDataDir != "/tmp/byte-agent-data" {
+		t.Fatalf("AgentDataDir = %q", cfg.AgentDataDir)
+	}
+	if cfg.HTTPAddr != "0.0.0.0:8787" {
+		t.Fatalf("HTTPAddr = %q", cfg.HTTPAddr)
+	}
+}
+
+func TestLoadPrefersLLMEnvOverCustomFallback(t *testing.T) {
+	t.Setenv("LLM_PROVIDER", "modelhub")
+	t.Setenv("LLM_API_URL", "https://modelhub.example/api")
+	t.Setenv("LLM_API_KEY", "primary-key")
+	t.Setenv("LLM_MODEL", "primary-model")
+	t.Setenv("LLM_MAX_TOKENS", "7000")
+	t.Setenv("CUSTOM_LLM_PROVIDER", "kimi")
+	t.Setenv("CUSTOM_LLM_API_URL", "https://api.moonshot.cn/v1/chat/completions")
+	t.Setenv("CUSTOM_LLM_API_KEY", "fallback-key")
+	t.Setenv("CUSTOM_LLM_MODEL", "fallback-model")
+	t.Setenv("CUSTOM_LLM_MAX_TOKENS", "9000")
+
+	cfg, err := Load(filepath.Join(t.TempDir(), ".env"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if cfg.LLM.Provider != ProviderModelHub {
+		t.Fatalf("Provider = %q", cfg.LLM.Provider)
+	}
+	if cfg.LLM.APIURL != "https://modelhub.example/api" {
+		t.Fatalf("APIURL = %q", cfg.LLM.APIURL)
+	}
+	if cfg.LLM.APIKey != "primary-key" {
+		t.Fatalf("APIKey = %q", cfg.LLM.APIKey)
+	}
+	if cfg.LLM.Model != "primary-model" {
+		t.Fatalf("Model = %q", cfg.LLM.Model)
+	}
+	if cfg.LLM.MaxTokens != 7000 {
 		t.Fatalf("MaxTokens = %d", cfg.LLM.MaxTokens)
 	}
 }
